@@ -4,42 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ProdigyHabit{% endblock %}</title>
+    <!-- Pico.css for a class-less, responsive, and modern UI -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <!-- Custom Stylesheet -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <!-- Marked.js for Markdown rendering -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; background-color: #f8f9fa; color: #212529; }
-        .container { background: #fff; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 2rem; }
-        h1, h2 { color: #343a40; border-bottom: 2px solid #007bff; padding-bottom: 0.5rem; }
-        
-        nav { background-color: #fff; padding: 1rem 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 2rem; display: flex; gap: 1.5rem; }
-        nav a { text-decoration: none; color: #007bff; font-weight: 500; font-size: 1.1rem; }
-        nav a.active { font-weight: bold; border-bottom: 2px solid #007bff; }
-
-        button, .nav-btn { padding: 0.75rem 1.5rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; font-weight: 500; transition: background-color 0.2s; }
-        button:hover, .nav-btn:hover { background-color: #0056b3; }
-        
-        table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
-        th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #dee2e6; }
-        th { background-color: #e9ecef; }
-        
-        .status { padding: 1rem; margin-top: 1rem; border-radius: 4px; display: none; }
-        .status.success { background-color: #d4edda; color: #155724; }
-        .status.error { background-color: #f8d7da; color: #721c24; }
-    </style>
 </head>
 <body>
-    <div class="container">
-        <h1>ProdigyHabit</h1>
-        <nav>
-            <a href="{{ url_for('entry') }}" class="{{ 'active' if request.endpoint == 'entry' else '' }}">入力</a>
-            <a href="{{ url_for('history') }}" class="{{ 'active' if request.endpoint == 'history' else '' }}">履歴</a>
-            <a href="{{ url_for('feedback') }}" class="{{ 'active' if request.endpoint == 'feedback' else '' }}">AIフィードバック</a>
-        </nav>
-    </div>
+    <main class="container">
+        <header>
+            <hgroup style="text-align: center;">
+                <h1>ProdigyHabit</h1>
+                <p>生産性ログとAIフィードバック</p>
+            </hgroup>
+            <nav>
+                <ul>
+                    <li><a role="button" href="{{ url_for('entry') }}" class="{{ 'secondary' if request.endpoint != 'entry' else '' }}">入力</a></li>
+                    <li><a role="button" href="{{ url_for('history') }}" class="{{ 'secondary' if request.endpoint != 'history' else '' }}">履歴</a></li>
+                    <li><a role="button" href="{{ url_for('feedback') }}" class="{{ 'secondary' if request.endpoint != 'feedback' else '' }}">AIフィードバック</a></li>
+                </ul>
+            </nav>
+        </header>
 
-    <main>
         {% block content %}{% endblock %}
-    </main>
 
+    </main>
 </body>
 </html>

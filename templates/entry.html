@@ -3,25 +3,27 @@
 {% block title %}スコア入力 - {{ super() }}{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h2>生産性ログを追加</h2>
+<article>
+    <header>
+        <h2>生産性ログを追加</h2>
+    </header>
     <form id="score-form">
-        <div>
-            <label for="date">日付:</label>
+        <label for="date">
+            日付
             <input type="date" id="date" name="date" required>
-        </div>
-        <div>
-            <label for="score">スコア (0-100):</label>
+        </label>
+        <label for="score">
+            スコア (0-100)
             <input type="number" id="score" name="score" min="0" max="100" required>
-        </div>
-        <div>
-            <label for="note">メモ:</label>
+        </label>
+        <label for="note">
+            メモ
             <input type="text" id="note" name="note" placeholder="（例）集中して作業できた">
-        </div>
+        </label>
         <button type="submit">ログを保存</button>
     </form>
-    <div id="save-status" class="status"></div>
-</div>
+    <div id="save-status"></div>
+</article>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -49,19 +51,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const result = await response.json();
-            saveStatus.style.display = 'block';
-
+            
             if (response.ok && result.success) {
-                saveStatus.className = 'status success';
-                saveStatus.textContent = '成功: ' + (result.message || 'スコアを保存しました。');
+                saveStatus.innerHTML = `<mark class="success">成功: ${result.message || 'スコアを保存しました。'}</mark>`;
                 scoreForm.reset();
                 dateInput.value = toISODateString(new Date());
             } else {
                 throw new Error(result.error || '不明なエラー');
             }
         } catch (error) {
-            saveStatus.className = 'status error';
-            saveStatus.textContent = 'エラー: ' + error.message;
+            saveStatus.innerHTML = `<mark class="error">エラー: ${error.message}</mark>`;
         }
     });
 });

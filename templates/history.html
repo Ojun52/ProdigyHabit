@@ -3,27 +3,33 @@
 {% block title %}スコア履歴 - {{ super() }}{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h2>スコア履歴</h2>
-    <div class="history-nav">
-        <button id="prev-week-btn" class="nav-btn">&lt; 前の週</button>
-        <span id="week-display"></span>
-        <button id="next-week-btn" class="nav-btn">次の週 &gt;</button>
+<article>
+    <header>
+        <h2>スコア履歴</h2>
+    </header>
+
+    <div class="grid">
+        <button id="prev-week-btn" class="outline">&lt; 前の週</button>
+        <div style="text-align: center; line-height: 2.5rem;" id="week-display"></div>
+        <button id="next-week-btn" class="outline">次の週 &gt;</button>
     </div>
-    <table id="scores-table">
-        <thead>
-            <tr>
-                <th>日付</th>
-                <th>曜日</th>
-                <th>スコア</th>
-                <th>メモ</th>
-            </tr>
-        </thead>
-        <tbody id="scores-tbody">
-            <!-- Weekly score history will be populated here -->
-        </tbody>
-    </table>
-</div>
+
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>日付</th>
+                    <th>曜日</th>
+                    <th>スコア</th>
+                    <th>メモ</th>
+                </tr>
+            </thead>
+            <tbody id="scores-tbody">
+                <!-- Weekly score history will be populated here -->
+            </tbody>
+        </table>
+    </div>
+</article>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -39,6 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const fetchAndDisplayScores = async (date) => {
         const dateParam = toISODateString(date);
+        scoresTbody.innerHTML = `<tr><td colspan="4"><progress></progress></td></tr>`;
         try {
             const response = await fetch(`/api/scores?date=${dateParam}`);
             if (!response.ok) throw new Error('スコア履歴の読み込みに失敗しました。');

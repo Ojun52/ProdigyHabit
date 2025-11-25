@@ -3,12 +3,14 @@
 {% block title %}AIフィードバック - {{ super() }}{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h2>AIフィードバック</h2>
+<article>
+    <header>
+        <h2>AIフィードバック</h2>
+    </header>
     <p>過去7日間のあなたの生産性ログに基づいて、AIが激励的なフィードバックと具体的な改善案を提案します。</p>
-    <button id="feedback-btn">フィードバックを取得</button>
-    <div id="feedback-container" style="margin-top: 1.5rem;">ここにAIからのフィードバックが表示されます。</div>
-</div>
+    <button id="feedback-btn" aria-busy="false">フィードバックを取得</button>
+    <div id="feedback-container" style="margin-top: 1.5rem;"></div>
+</article>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,7 +18,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const feedbackContainer = document.getElementById('feedback-container');
 
     feedbackBtn.addEventListener('click', async () => {
-        feedbackContainer.innerHTML = 'AIからのフィードバックを生成中です...';
+        feedbackBtn.setAttribute('aria-busy', 'true');
+        feedbackBtn.disabled = true;
+        feedbackContainer.innerHTML = '';
+        
         try {
             const response = await fetch('/api/feedback');
             const result = await response.json();
@@ -27,7 +32,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(result.error || 'フィードバックの取得に失敗しました。');
             }
         } catch (error) {
-            feedbackContainer.textContent = 'エラー: ' + error.message;
+            feedbackContainer.innerHTML = `<mark class="error">${error.message}</mark>`;
+        } finally {
+            feedbackBtn.setAttribute('aria-busy', 'false');
+            feedbackBtn.disabled = false;
         }
     });
 });

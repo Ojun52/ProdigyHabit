@@ -1,0 +1,67 @@
+/* Custom styles for navigation buttons */
+main.container {
+    max-width: 600px; /* Adjust container width for better mobile experience */
+}
+
+header hgroup {
+    margin-bottom: 1rem; /* Reduce space below title */
+}
+header nav {
+    margin-bottom: 1rem; /* Reduce space below navigation */
+    margin: 0 auto; /* Center the navigation block itself */
+}
+
+nav ul {
+    display: flex;
+    flex-direction: column; /* Stack buttons vertically on small screens */
+    gap: 0.5rem; /* Spacing between buttons */
+    padding: 0;
+    margin: 0;
+    align-items: center; /* Center stacked buttons horizontally */
+}
+nav li {
+    list-style: none;
+}
+nav a[role="button"] {
+    width: 180px; /* Set fixed width for consistency on all screens */
+    display: block; /* Make button fill the width */
+    text-align: center;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+}
+@media (min-width: 768px) { /* On larger screens, display horizontally */
+    nav ul {
+        flex-direction: row;
+        justify-content: center; /* Center items for larger screens */
+        gap: 1rem; /* Spacing between buttons on larger screens */
+        width: 100%; /* Make ul take full width to align with article */
+    }
+    nav li {
+        width: auto; /* Allow items to take natural width */
+    }
+    nav a[role="button"] {
+        width: 180px; /* Set a fixed width for consistency */
+    }
+}
+
+/* General styling for feedback container */
+#feedback-container { background: var(--pico-muted-border-color); padding: 1.5rem; border-radius: var(--pico-border-radius); line-height: 1.6; min-height: 50px; }
+
+/* Center titles within articles */
+article {
+    width: 100%;
+    margin: auto; /* Ensure article itself is centered */
+    padding: 0; /* Remove default padding from article */
+    box-sizing: border-box; /* Include padding/border in element's total width/height */
+    margin-top: 3rem; /* Add vertical space above article */
+}
+
+article header {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 0; /* Remove margin bottom for better flush with content */
+}
+article h2 {
+    margin-bottom: 0; /* Remove default bottom margin for better flex centering */
+}
