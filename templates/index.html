@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ProdigyHabit - AI Feedback</title>
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; background-color: #f8f9fa; color: #212529; }
         .container { background: #fff; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 2rem; }
@@ -15,7 +17,8 @@
         button:hover { background-color: #0056b3; }
         #feedback-btn { background-color: #28a745; }
         #feedback-btn:hover { background-color: #218838; }
-        #feedback-container { white-space: pre-wrap; background: #e9ecef; padding: 1.5rem; border-radius: 4px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; line-height: 1.6; }
+        #feedback-container { background: #e9ecef; padding: 1.5rem; border-radius: 4px; line-height: 1.6; min-height: 50px; }
+        #feedback-container h1, #feedback-container h2, #feedback-container h3 { border: none; }
         .status { padding: 1rem; margin-top: 1rem; border-radius: 4px; display: none; }
         .status.success { background-color: #d4edda; color: #155724; }
         .status.error { background-color: #f8d7da; color: #721c24; }
@@ -47,7 +50,7 @@
     <div class="container">
         <h2>AIフィードバック</h2>
         <button id="feedback-btn">フィードバックを取得</button>
-        <pre id="feedback-container">ここにAIからのフィードバックが表示されます。</pre>
+        <div id="feedback-container">ここにAIからのフィードバックが表示されます。</div>
     </div>
 
     <script>
@@ -98,13 +101,14 @@
 
             // --- Handle Feedback Request ---
             feedbackBtn.addEventListener('click', async () => {
-                feedbackContainer.textContent = 'AIからのフィードバックを生成中です...';
+                feedbackContainer.innerHTML = 'AIからのフィードバックを生成中です...';
                 try {
                     const response = await fetch('/api/feedback');
                     const result = await response.json();
 
                     if (response.ok) {
-                        feedbackContainer.textContent = result.feedback;
+                        // Use marked.parse to convert Markdown to HTML
+                        feedbackContainer.innerHTML = marked.parse(result.feedback);
                     } else {
                         throw new Error(result.error || 'フィードバックの取得に失敗しました。');
                     }
