@@ -1,99 +1,134 @@
-
-import sqlite3
 import datetime
-from flask import Flask, request, jsonify, render_template, g
+import json
+import os
+import sqlite3
+
+import google.generativeai as genai
+from flask import Flask, g, jsonify, render_template, request
+
+# --- Configuration ---
+DATABASE = 'productivity.db'
+GEMINI_API_KEY = os.getenv('GOOGLE_API_KEY')
+if not GEMINI_API_KEY:
+    raise ValueError("No GOOGLE_API_KEY set for Flask application")
 
 app = Flask(__name__)
-DATABASE = 'prodigy_habit.db'
+app.config['DATABASE'] = DATABASE
+app.json.ensure_ascii = False
+
+# --- AI Configuration ---
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-2.5-flash')
+
+# --- Database Management ---
+
 
 def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
-        db.row_factory = sqlite3.Row
-    return db
+    if 'db' not in g:
+        g.db = sqlite3.connect(
+            app.config['DATABASE'], detect_types=sqlite3.PARSE_DECLTYPES)
+        g.db.row_factory = sqlite3.Row
+    return g.db
+
 
 @app.teardown_appcontext
-def close_connection(exception):
-    db = getattr(g, '_database', None)
+def close_db(e=None):
+    db = g.pop('db', None)
     if db is not None:
         db.close()
 
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
 
-def init_db_command():
-    """Initializes the database."""
-    db = sqlite3.connect(DATABASE)
+def init_db():
+    db = sqlite3.connect(app.config['DATABASE'])
     cursor = db.cursor()
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS scores (
+    CREATE TABLE IF NOT EXISTS daily_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT UNIQUE NOT NULL,
         score INTEGER NOT NULL,
-        memo TEXT,
-        date TEXT NOT NULL UNIQUE
+        note TEXT
     );
     """)
     db.commit()
     db.close()
     print("Initialized the database.")
 
+# --- Frontend Route ---
+
+
 @app.route('/')
 def index():
+    """Serves the main HTML page."""
     return render_template('index.html')
 
-@app.route('/save_score', methods=['POST'])
+# --- API Endpoints ---
+
+
+@app.route('/api/score', methods=['POST'])
 def save_score():
     data = request.get_json()
+    if not data or not all(k in data for k in ['date', 'score']):
+        return jsonify({'error': 'Missing data. "date" and "score" are required.'}), 400
+
+    date = data['date']
     score = data['score']
-    memo = data['memo']
-    date = datetime.date.today().isoformat()
+    note = data.get('note', '')
+
+    sql = ''' INSERT OR REPLACE INTO daily_log (id, date, score, note)
+              VALUES ((SELECT id FROM daily_log WHERE date = ?), ?, ?, ?) '''
 
     try:
         db = get_db()
-        cursor = db.cursor()
-        # Use INSERT OR REPLACE to handle cases where an entry for the same day already exists
-        cursor.execute(
-            "INSERT OR REPLACE INTO scores (id, score, memo, date) VALUES ((SELECT id FROM scores WHERE date = ?), ?, ?, ?)",
-            (date, score, memo, date)
-        )
+        db.execute(sql, (date, date, score, note))
         db.commit()
-        return jsonify({'status': 'success'})
-    except sqlite3.Error as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({'success': True, 'message': 'Score saved successfully.'}), 201
+    except sqlite3.IntegrityError as e:
+        return jsonify({'error': f'Database integrity error: {e}'}), 500
+    except Exception as e:
+        return jsonify({'error': f'An unexpected error occurred: {e}'}), 500
 
 
-@app.route('/get_scores', methods=['GET'])
-def get_scores():
+@app.route('/api/feedback', methods=['GET'])
+def get_feedback():
     try:
         db = get_db()
-        cursor = db.cursor()
-        
-        # Get scores from the last 7 days
-        seven_days_ago = (datetime.date.today() - datetime.timedelta(days=6)).isoformat()
-        cursor.execute(
-            "SELECT score, memo, date FROM scores WHERE date >= ? ORDER BY date DESC",
+        seven_days_ago = (datetime.date.today() -
+                          datetime.timedelta(days=6)).isoformat()
+
+        logs = db.execute(
+            'SELECT date, score, note FROM daily_log WHERE date >= ? ORDER BY date DESC',
             (seven_days_ago,)
-        )
-        scores_data = [dict(row) for row in cursor.fetchall()]
+        ).fetchall()
 
-        # Calculate average
-        total_score = sum(item['score'] for item in scores_data)
-        average = total_score / len(scores_data) if scores_data else 0
+        if not logs:
+            return jsonify({'feedback': 'Not enough data for feedback. Please log your productivity for a few days.'})
 
-        return jsonify({
-            'scores': scores_data,
-            'average': round(average, 2)
-        })
-    except sqlite3.Error as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        log_data = [dict(log) for log in logs]
 
+        prompt_template = f"""
+あなたは、生産性向上のためのフィードバックを生成するAIアシスタントです。
+以下のJSONデータは、ユーザーの過去数日間の生産性ログです。各オブジェクトは1日を表します。
+- 'date': 日付
+- 'score': 100点満点の生産性スコア
+- 'note': その日の行動に関するメモや反省点
+--- データ ---
+{json.dumps(log_data, indent=2, ensure_ascii=False)}
+--- データ ---
+上記のデータに基づいて、以下の分析とフィードバックを日本語で生成してください。回答のトーンは激励的でプロフェッショナルであること。
+1. **ポジティブなパターン（1点）**: スコアが高い日に共通する行動や習慣を一つ特定し、ユーザーを褒めてください。
+2. **改善すべき課題（1点）**: スコアが低い日に共通する問題点や非効率な行動を一つ特定してください。
+3. **具体的な行動改善提案（3点）**: 課題を解決し、生産性レベルを「Prodigy」に近づけるための、具体的で実行可能な改善策を3つの箇条書き（ステップ）で提案してください。
+"""
+        response = model.generate_content(prompt_template)
+
+        return jsonify({'feedback': response.text})
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to generate feedback: {e}'}), 500
+
+
+# --- App Initialization ---
 if __name__ == '__main__':
-    with app.app_context():
-        init_db_command()
-    app.run(debug=True, port=5001)
-
+    init_db()
+    app.run(debug=True, port=5002)
+    app.run(debug=True, port=5002)

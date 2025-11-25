@@ -1,123 +1,117 @@
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ProdigyHabit - Productivity Score</title>
+    <title>ProdigyHabit - AI Feedback</title>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
-        h1, h2 { color: #333; }
-        .container { background: #f9f9f9; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        form { display: flex; flex-direction: column; gap: 0.75rem; }
-        label { font-weight: bold; }
-        input[type="number"], input[type="text"] { padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
-        button { padding: 0.6rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 700px; margin: 2rem auto; padding: 0 1rem; background-color: #f8f9fa; color: #212529; }
+        .container { background: #fff; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 2rem; }
+        h1, h2 { color: #343a40; border-bottom: 2px solid #007bff; padding-bottom: 0.5rem; }
+        form { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+        label { font-weight: 600; }
+        input[type="date"], input[type="number"], input[type="text"] { padding: 0.75rem; border: 1px solid #ced4da; border-radius: 4px; font-size: 1rem; }
+        button { padding: 0.75rem 1.5rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; font-weight: 500; transition: background-color 0.2s; }
         button:hover { background-color: #0056b3; }
-        #scores-list { list-style-type: none; padding: 0; }
-        #scores-list li { background: #fff; padding: 0.75rem; border: 1px solid #eee; border-radius: 4px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; }
-        #average-score { font-size: 1.2rem; font-weight: bold; color: #007bff; }
-        .score-memo { color: #555; }
+        #feedback-btn { background-color: #28a745; }
+        #feedback-btn:hover { background-color: #218838; }
+        #feedback-container { white-space: pre-wrap; background: #e9ecef; padding: 1.5rem; border-radius: 4px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace; line-height: 1.6; }
+        .status { padding: 1rem; margin-top: 1rem; border-radius: 4px; display: none; }
+        .status.success { background-color: #d4edda; color: #155724; }
+        .status.error { background-color: #f8d7da; color: #721c24; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h1>ProdigyHabit</h1>
-        <h2>今日の生産性スコアを入力</h2>
+        <h2>生産性ログを追加</h2>
         <form id="score-form">
-            <label for="score">スコア (0-100):</label>
-            <input type="number" id="score" name="score" min="0" max="100" required>
-            
-            <label for="memo">メモ:</label>
-            <input type="text" id="memo" name="memo" placeholder="（例）集中して作業できた">
-            
-            <button type="submit">保存</button>
+            <div>
+                <label for="date">日付:</label>
+                <input type="date" id="date" name="date" required>
+            </div>
+            <div>
+                <label for="score">スコア (0-100):</label>
+                <input type="number" id="score" name="score" min="0" max="100" required>
+            </div>
+            <div>
+                <label for="note">メモ:</label>
+                <input type="text" id="note" name="note" placeholder="（例）集中して作業できた">
+            </div>
+            <button type="submit">ログを保存</button>
         </form>
+        <div id="save-status" class="status"></div>
     </div>
 
-    <div class="container" style="margin-top: 2rem;">
-        <h2>過去7日間のスコア</h2>
-        <p>平均点: <span id="average-score">...</span></p>
-        <ul id="scores-list">
-            <!-- Scores will be dynamically inserted here -->
-        </ul>
+    <div class="container">
+        <h2>AIフィードバック</h2>
+        <button id="feedback-btn">フィードバックを取得</button>
+        <pre id="feedback-container">ここにAIからのフィードバックが表示されます。</pre>
     </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const scoreForm = document.getElementById('score-form');
-            const scoresList = document.getElementById('scores-list');
-            const averageScoreEl = document.getElementById('average-score');
+            const saveStatus = document.getElementById('save-status');
+            const feedbackBtn = document.getElementById('feedback-btn');
+            const feedbackContainer = document.getElementById('feedback-container');
 
-            // --- Fetch and display scores on page load ---
-            const fetchAndDisplayScores = async () => {
-                try {
-                    const response = await fetch('/get_scores');
-                    if (!response.ok) throw new Error('Network response was not ok.');
-                    
-                    const data = await response.json();
+            // Set default date to today
+            const dateInput = document.getElementById('date');
+            const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
+            dateInput.value = today;
 
-                    // Clear previous list
-                    scoresList.innerHTML = '';
-
-                    // Display scores
-                    if (data.scores.length > 0) {
-                        data.scores.forEach(item => {
-                            const li = document.createElement('li');
-                            const memoText = item.memo ? ` - <span class="score-memo">${item.memo}</span>` : '';
-                            li.innerHTML = `<strong>${item.date}:</strong> ${item.score}点 ${memoText}`;
-                            scoresList.appendChild(li);
-                        });
-                    } else {
-                        scoresList.innerHTML = '<li>まだスコアがありません。</li>';
-                    }
-
-                    // Display average
-                    averageScoreEl.textContent = data.average;
-
-                } catch (error) {
-                    console.error('Error fetching scores:', error);
-                    scoresList.innerHTML = '<li>スコアの読み込みに失敗しました。</li>';
-                    averageScoreEl.textContent = 'N/A';
-                }
-            };
-
-            // --- Handle form submission ---
+            // --- Handle Log Submission ---
             scoreForm.addEventListener('submit', async (event) => {
                 event.preventDefault();
                 
-                const score = document.getElementById('score').value;
-                const memo = document.getElementById('memo').value;
+                const data = {
+                    date: document.getElementById('date').value,
+                    score: parseInt(document.getElementById('score').value, 10),
+                    note: document.getElementById('note').value,
+                };
 
                 try {
-                    const response = await fetch('/save_score', {
+                    const response = await fetch('/api/score', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ score: parseInt(score), memo: memo }),
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data),
                     });
 
-                    if (!response.ok) throw new Error('Failed to save score.');
-                    
                     const result = await response.json();
+                    saveStatus.style.display = 'block';
 
-                    if (result.status === 'success') {
-                        // Clear form and refresh scores list
+                    if (response.ok && result.success) {
+                        saveStatus.className = 'status success';
+                        saveStatus.textContent = '成功: ' + (result.message || 'スコアを保存しました。');
                         scoreForm.reset();
-                        await fetchAndDisplayScores();
+                        dateInput.value = today; // Reset date to today after clearing
                     } else {
-                        alert('スコアの保存に失敗しました: ' + (result.message || 'Unknown error'));
+                        throw new Error(result.error || '不明なエラー');
                     }
                 } catch (error) {
-                    console.error('Error saving score:', error);
-                    alert('スコアの保存中にエラーが発生しました。');
+                    saveStatus.className = 'status error';
+                    saveStatus.textContent = 'エラー: ' + error.message;
                 }
             });
 
-            // Initial load
-            fetchAndDisplayScores();
+            // --- Handle Feedback Request ---
+            feedbackBtn.addEventListener('click', async () => {
+                feedbackContainer.textContent = 'AIからのフィードバックを生成中です...';
+                try {
+                    const response = await fetch('/api/feedback');
+                    const result = await response.json();
+
+                    if (response.ok) {
+                        feedbackContainer.textContent = result.feedback;
+                    } else {
+                        throw new Error(result.error || 'フィードバックの取得に失敗しました。');
+                    }
+                } catch (error) {
+                    feedbackContainer.textContent = 'エラー: ' + error.message;
+                }
+            });
         });
     </script>
 
