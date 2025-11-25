@@ -13,9 +13,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application's code to the working directory
 COPY . .
 
+# Copy the entrypoint script and make it executable
+COPY entrypoint.sh .
+RUN chmod +x /app/entrypoint.sh
+
 # The PORT environment variable is expected to be set by the runtime environment (e.g., docker-compose)
 # EXPOSE will be handled by docker-compose, but it's good practice to document it
 # EXPOSE ${PORT}
 
-# Run app.py using Gunicorn when the container launches (using shell form to allow variable substitution)
-CMD gunicorn --workers 4 --bind 0.0.0.0:$PORT app:app
+# Set the entrypoint script to be executed when the container starts
+ENTRYPOINT ["/app/entrypoint.sh"]
