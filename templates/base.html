@@ -4,11 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ProdigyHabit{% endblock %}</title>
-    <!-- Pico.css for a class-less, responsive, and modern UI -->
+    <!-- Pico.css -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <!-- Google Material Icons -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
     <!-- Custom Stylesheet -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <!-- Marked.js for Markdown rendering -->
+    <!-- Marked.js -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
@@ -18,17 +20,40 @@
                 <h1>ProdigyHabit</h1>
                 <p>生産性ログとAIフィードバック</p>
             </hgroup>
-            <nav>
+            <nav class="top-nav">
                 <ul>
-                    <li><a role="button" href="{{ url_for('entry') }}" class="{{ 'secondary' if request.endpoint != 'entry' else '' }}">入力</a></li>
-                    <li><a role="button" href="{{ url_for('history') }}" class="{{ 'secondary' if request.endpoint != 'history' else '' }}">履歴</a></li>
-                    <li><a role="button" href="{{ url_for('feedback') }}" class="{{ 'secondary' if request.endpoint != 'feedback' else '' }}">AIフィードバック</a></li>
+                    <li><a role="button" href="{{ url_for('entry') }}" class="{{ 'secondary' if request.endpoint != 'entry' else '' }}">入力✍️</a></li>
+                    <li><a role="button" href="{{ url_for('history') }}" class="{{ 'secondary' if request.endpoint != 'history' else '' }}">履歴📈</a></li>
+                    <li><a role="button" href="{{ url_for('feedback') }}" class="{{ 'secondary' if request.endpoint != 'feedback' else '' }}">AIフィードバック💡</a></li>
                 </ul>
             </nav>
         </header>
 
         {% block content %}{% endblock %}
-
     </main>
+
+    <!-- Footer Navigation -->
+    <nav id="footer-nav">
+        <ul>
+            <li>
+                <a href="{{ url_for('entry') }}" class="{{ 'active' if request.endpoint == 'entry' else '' }}">
+                    <i class="material-icons">edit</i>
+                    <span>記録</span>
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('history') }}" class="{{ 'active' if request.endpoint == 'history' else '' }}">
+                    <i class="material-icons">bar_chart</i>
+                    <span>履歴</span>
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('feedback') }}" class="{{ 'active' if request.endpoint == 'feedback' else '' }}">
+                    <i class="material-icons">lightbulb</i>
+                    <span>フィードバック</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
 </body>
 </html>

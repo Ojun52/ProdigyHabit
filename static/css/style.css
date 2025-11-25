@@ -3,45 +3,36 @@ main.container {
     max-width: 600px; /* Adjust container width for better mobile experience */
 }
 
-header hgroup {
-    margin-bottom: 1rem; /* Reduce space below title */
-}
-header nav {
-    margin-bottom: 1rem; /* Reduce space below navigation */
-    margin: 0 auto; /* Center the navigation block itself */
+/* Add padding to body to prevent footer overlap */
+body {
+    padding-bottom: 80px; /* Should be slightly more than footer height */
 }
 
-nav ul {
+header hgroup {
+    margin-bottom: 1rem;
+}
+header nav.top-nav {
+    margin: 1rem auto;
+}
+
+nav.top-nav ul {
     display: flex;
-    flex-direction: column; /* Stack buttons vertically on small screens */
-    gap: 0.5rem; /* Spacing between buttons */
+    gap: 1rem;
     padding: 0;
     margin: 0;
-    align-items: center; /* Center stacked buttons horizontally */
+    justify-content: center;
+    width: 100%;
+    list-style: none; /* Ensure no list bullets */
 }
-nav li {
-    list-style: none;
+nav.top-nav li {
+    list-style: none; /* Ensure no list bullets */
+    width: auto;
+    margin: 0; /* Remove default li margin */
+    padding: 0; /* Remove default li padding */
 }
-nav a[role="button"] {
-    width: 180px; /* Set fixed width for consistency on all screens */
-    display: block; /* Make button fill the width */
+nav.top-nav a[role="button"] {
+    width: 180px;
     text-align: center;
-    padding: 0.75rem 1rem;
-    font-size: 1rem;
-}
-@media (min-width: 768px) { /* On larger screens, display horizontally */
-    nav ul {
-        flex-direction: row;
-        justify-content: center; /* Center items for larger screens */
-        gap: 1rem; /* Spacing between buttons on larger screens */
-        width: 100%; /* Make ul take full width to align with article */
-    }
-    nav li {
-        width: auto; /* Allow items to take natural width */
-    }
-    nav a[role="button"] {
-        width: 180px; /* Set a fixed width for consistency */
-    }
 }
 
 /* General styling for feedback container */
@@ -50,18 +41,75 @@ nav a[role="button"] {
 /* Center titles within articles */
 article {
     width: 100%;
-    margin: auto; /* Ensure article itself is centered */
-    padding: 0; /* Remove default padding from article */
-    box-sizing: border-box; /* Include padding/border in element's total width/height */
-    margin-top: 3rem; /* Add vertical space above article */
+    margin: auto;
+    padding: 2rem; /* Add padding inside the article boxes */
+    box-sizing: border-box;
+    margin-top: 3rem;
 }
 
 article header {
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-bottom: 0; /* Remove margin bottom for better flush with content */
 }
 article h2 {
-    margin-bottom: 0; /* Remove default bottom margin for better flex centering */
+    margin-bottom: 0;
+}
+
+
+/* --- Footer Navigation --- */
+#footer-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: var(--pico-card-background-color);
+    border-top: 1px solid var(--pico-muted-border-color);
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+}
+#footer-nav ul {
+    display: flex;
+    padding: 0.5rem 0; /* Remove horizontal padding, let li handle it */
+    margin: 0 auto; /* Center the ul block itself */
+    max-width: 600px; /* Constrain ul width to prevent stretching on wider mobiles */
+    list-style: none; /* Ensure no list bullets */
+    gap: 1rem; /* Add gap between li items */
+}
+#footer-nav li {
+    list-style: none; /* Ensure no list bullets */
+    width: 33.33%; /* Force equal width for 3 items */
+    text-align: center; /* Center the 'a' tag within the li */
+}
+#footer-nav a {
+    display: flex; /* Use flex for full width and centering of children */
+    width: 100%; /* Make a tag take full width of li */
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    font-size: 0.75rem;
+    text-decoration: none;
+    color: var(--pico-secondary);
+    white-space: nowrap; /* Prevent text wrapping */
+}
+#footer-nav a.active {
+    color: var(--pico-primary);
+}
+#footer-nav a .material-icons {
+    font-size: 1.5rem;
+}
+
+/* --- Responsive Navigation Toggle --- */
+@media (max-width: 767px) {
+    nav.top-nav {
+        display: none; /* Hide top nav on mobile */
+    }
+}
+@media (min-width: 768px) {
+    #footer-nav {
+        display: none; /* Hide footer nav on desktop */
+    }
+    body {
+        padding-bottom: 0; /* Remove body padding on desktop */
+    }
 }
