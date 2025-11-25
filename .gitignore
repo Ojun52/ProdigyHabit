@@ -1,0 +1,23 @@
+# Environment variables
+.env
+
+# Databases
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Docker
+# (No specific Docker files to ignore for this simple setup yet)
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log

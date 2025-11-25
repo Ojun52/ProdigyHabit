@@ -1,0 +1,29 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5002:5002"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    command: >
+      sh -c "
+        # Wait for the database to be ready
+        # Note: In a real production setup, a more robust wait script is recommended
+        sleep 10;
+        # Run the app
+        flask run --host=0.0.0.0 --port=5002
+      "
+
+  db:
+    image: postgres:14-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .env
+    ports:
+      - "5432:5432" # Optional: for connecting to the DB from the host
+
+volumes:
+  postgres_data:
