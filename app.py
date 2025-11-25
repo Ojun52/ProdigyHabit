@@ -2,10 +2,9 @@ import datetime
 import json
 import os
 import time
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import google.generativeai as genai
 from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
 
 # --- Configuration ---
 # Database connection details from environment variables
@@ -13,6 +12,7 @@ DB_NAME = os.getenv("POSTGRES_DB")
 DB_USER = os.getenv("POSTGRES_USER")
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 DB_HOST = os.getenv("DB_HOST", "db")
+SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
 
 # Gemini API Key
 GEMINI_API_KEY = os.getenv('GOOGLE_API_KEY')
@@ -20,51 +20,29 @@ if not GEMINI_API_KEY:
     raise ValueError("No GOOGLE_API_KEY set for Flask application")
 
 app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.json.ensure_ascii = False
+
+db = SQLAlchemy(app)
 
 # --- AI Configuration ---
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-# --- Database Management ---
-def get_db_connection():
-    """Establishes a connection to the PostgreSQL database."""
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        database=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD)
-    return conn
+# --- Database Model ---
+class DailyLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, unique=True, nullable=False)
+    score = db.Column(db.Integer, nullable=False)
+    note = db.Column(db.Text, nullable=True)
 
-def init_db():
-    """Initializes the database with a retry mechanism."""
-    retries = 5
-    delay = 5
-    for i in range(retries):
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("""
-            CREATE TABLE IF NOT EXISTS daily_log (
-                id SERIAL PRIMARY KEY,
-                date DATE UNIQUE NOT NULL,
-                score INTEGER NOT NULL,
-                note TEXT
-            );
-            """)
-            conn.commit()
-            cursor.close()
-            conn.close()
-            print("Database initialized successfully.")
-            return
-        except psycopg2.OperationalError as e:
-            print(f"Database connection failed: {e}")
-            if i < retries - 1:
-                print(f"Retrying in {delay} seconds...")
-                time.sleep(delay)
-            else:
-                print("Could not connect to the database after several retries.")
-                raise
+    def to_dict(self):
+        return {
+            "date": self.date.isoformat(),
+            "score": self.score,
+            "note": self.note
+        }
 
 # --- Frontend Routes ---
 @app.route('/')
@@ -94,35 +72,32 @@ def save_score():
     if not data or not all(k in data for k in ['date', 'score']):
         return jsonify({'error': 'Missing data. "date" and "score" are required.'}), 400
 
-    date = data['date']
-    score = data['score']
-    note = data.get('note', '')
-
-    sql = """
-        INSERT INTO daily_log (date, score, note)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (date) DO UPDATE SET
-            score = EXCLUDED.score,
-            note = EXCLUDED.note;
-    """
-    
     try:
-        conn = get_db_connection()
-        with conn.cursor() as cursor:
-            cursor.execute(sql, (date, score, note))
-            conn.commit()
-        conn.close()
+        log_date = datetime.datetime.strptime(data['date'], '%Y-%m-%d').date()
+        
+        # Find existing log or create a new one
+        log = DailyLog.query.filter_by(date=log_date).first()
+        if log:
+            # Update existing log
+            log.score = data['score']
+            log.note = data.get('note', '')
+        else:
+            # Create new log
+            log = DailyLog(
+                date=log_date,
+                score=data['score'],
+                note=data.get('note', '')
+            )
+            db.session.add(log)
+        
+        db.session.commit()
         return jsonify({'success': True, 'message': 'Score saved successfully.'}), 201
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': f'An unexpected error occurred: {e}'}), 500
 
 @app.route('/api/scores', methods=['GET'])
 def get_scores():
-    """
-    Fetches score logs for a specific week.
-    Accepts a 'date' query parameter (YYYY-MM-DD).
-    Defaults to the current week if no date is provided.
-    """
     date_str = request.args.get('date')
     try:
         if date_str:
@@ -130,28 +105,18 @@ def get_scores():
         else:
             target_date = datetime.date.today()
 
-        # Calculate the start of the week (Monday) and end of the week (Sunday)
         start_of_week = target_date - datetime.timedelta(days=target_date.weekday())
         end_of_week = start_of_week + datetime.timedelta(days=6)
 
-        conn = get_db_connection()
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(
-                'SELECT date, score, note FROM daily_log WHERE date >= %s AND date <= %s ORDER BY date ASC',
-                (start_of_week, end_of_week)
-            )
-            logs = cursor.fetchall()
-        conn.close()
-
-        # Convert date objects to strings
-        for log in logs:
-            if isinstance(log['date'], datetime.date):
-                log['date'] = log['date'].isoformat()
+        logs = DailyLog.query.filter(
+            DailyLog.date >= start_of_week,
+            DailyLog.date <= end_of_week
+        ).order_by(DailyLog.date.asc()).all()
         
         return jsonify({
             "week_start": start_of_week.isoformat(),
             "week_end": end_of_week.isoformat(),
-            "logs": logs
+            "logs": [log.to_dict() for log in logs]
         })
     except Exception as e:
         return jsonify({'error': f'Failed to fetch scores: {e}'}), 500
@@ -159,23 +124,15 @@ def get_scores():
 @app.route('/api/feedback', methods=['GET'])
 def get_feedback():
     try:
-        conn = get_db_connection()
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            seven_days_ago = (datetime.date.today() - datetime.timedelta(days=6)).isoformat()
-            cursor.execute(
-                'SELECT date, score, note FROM daily_log WHERE date >= %s ORDER BY date DESC',
-                (seven_days_ago,)
-            )
-            logs = cursor.fetchall()
-        conn.close()
+        seven_days_ago = datetime.date.today() - datetime.timedelta(days=6)
+        logs = DailyLog.query.filter(
+            DailyLog.date >= seven_days_ago
+        ).order_by(DailyLog.date.desc()).all()
 
         if not logs:
             return jsonify({'feedback': 'Not enough data for feedback. Please log your productivity for a few days.'})
 
-        # Convert date objects to strings
-        for log in logs:
-            if isinstance(log['date'], datetime.date):
-                log['date'] = log['date'].isoformat()
+        log_data = [log.to_dict() for log in logs]
         
         prompt_template = f"""
 あなたは、生産性向上のためのフィードバックを生成するAIアシスタントです。
@@ -184,7 +141,7 @@ def get_feedback():
 - 'score': 100点満点の生産性スコア
 - 'note': その日の行動に関するメモや反省点
 --- データ ---
-{json.dumps(logs, indent=2, ensure_ascii=False)}
+{json.dumps(log_data, indent=2, ensure_ascii=False)}
 --- データ ---
 上記のデータに基づいて、以下の分析とフィードバックを日本語で生成してください。回答のトーンは激励的でプロフェッショナルであること。
 1. **ポジティブなパターン（1点）**: スコアが高い日に共通する行動や習慣を一つ特定し、ユーザーを褒めてください。
@@ -201,6 +158,22 @@ def get_feedback():
 # --- App Initialization ---
 @app.cli.command("init-db")
 def init_db_command():
-    """Initializes the database."""
-    init_db()
-    print("Database initialization command finished.")
+    """Initializes the database by creating all tables."""
+    # A short delay to allow the DB container to be ready
+    # In a real-world app, use a more robust wait-for-it script
+    from sqlalchemy.exc import OperationalError
+    retries = 5
+    delay = 5
+    for i in range(retries):
+        try:
+            db.create_all()
+            print("Database initialized successfully.")
+            return
+        except OperationalError as e:
+            print(f"Database connection failed: {e}")
+            if i < retries - 1:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                print("Could not connect to the database after several retries.")
+                raise
