@@ -1,0 +1,125 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ProdigyHabit - Productivity Score</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        h1, h2 { color: #333; }
+        .container { background: #f9f9f9; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        form { display: flex; flex-direction: column; gap: 0.75rem; }
+        label { font-weight: bold; }
+        input[type="number"], input[type="text"] { padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 0.6rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; }
+        button:hover { background-color: #0056b3; }
+        #scores-list { list-style-type: none; padding: 0; }
+        #scores-list li { background: #fff; padding: 0.75rem; border: 1px solid #eee; border-radius: 4px; margin-bottom: 0.5rem; display: flex; justify-content: space-between; }
+        #average-score { font-size: 1.2rem; font-weight: bold; color: #007bff; }
+        .score-memo { color: #555; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>ProdigyHabit</h1>
+        <h2>今日の生産性スコアを入力</h2>
+        <form id="score-form">
+            <label for="score">スコア (0-100):</label>
+            <input type="number" id="score" name="score" min="0" max="100" required>
+            
+            <label for="memo">メモ:</label>
+            <input type="text" id="memo" name="memo" placeholder="（例）集中して作業できた">
+            
+            <button type="submit">保存</button>
+        </form>
+    </div>
+
+    <div class="container" style="margin-top: 2rem;">
+        <h2>過去7日間のスコア</h2>
+        <p>平均点: <span id="average-score">...</span></p>
+        <ul id="scores-list">
+            <!-- Scores will be dynamically inserted here -->
+        </ul>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const scoreForm = document.getElementById('score-form');
+            const scoresList = document.getElementById('scores-list');
+            const averageScoreEl = document.getElementById('average-score');
+
+            // --- Fetch and display scores on page load ---
+            const fetchAndDisplayScores = async () => {
+                try {
+                    const response = await fetch('/get_scores');
+                    if (!response.ok) throw new Error('Network response was not ok.');
+                    
+                    const data = await response.json();
+
+                    // Clear previous list
+                    scoresList.innerHTML = '';
+
+                    // Display scores
+                    if (data.scores.length > 0) {
+                        data.scores.forEach(item => {
+                            const li = document.createElement('li');
+                            const memoText = item.memo ? ` - <span class="score-memo">${item.memo}</span>` : '';
+                            li.innerHTML = `<strong>${item.date}:</strong> ${item.score}点 ${memoText}`;
+                            scoresList.appendChild(li);
+                        });
+                    } else {
+                        scoresList.innerHTML = '<li>まだスコアがありません。</li>';
+                    }
+
+                    // Display average
+                    averageScoreEl.textContent = data.average;
+
+                } catch (error) {
+                    console.error('Error fetching scores:', error);
+                    scoresList.innerHTML = '<li>スコアの読み込みに失敗しました。</li>';
+                    averageScoreEl.textContent = 'N/A';
+                }
+            };
+
+            // --- Handle form submission ---
+            scoreForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                
+                const score = document.getElementById('score').value;
+                const memo = document.getElementById('memo').value;
+
+                try {
+                    const response = await fetch('/save_score', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ score: parseInt(score), memo: memo }),
+                    });
+
+                    if (!response.ok) throw new Error('Failed to save score.');
+                    
+                    const result = await response.json();
+
+                    if (result.status === 'success') {
+                        // Clear form and refresh scores list
+                        scoreForm.reset();
+                        await fetchAndDisplayScores();
+                    } else {
+                        alert('スコアの保存に失敗しました: ' + (result.message || 'Unknown error'));
+                    }
+                } catch (error) {
+                    console.error('Error saving score:', error);
+                    alert('スコアの保存中にエラーが発生しました。');
+                }
+            });
+
+            // Initial load
+            fetchAndDisplayScores();
+        });
+    </script>
+
+</body>
+</html>
