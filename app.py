@@ -5,7 +5,7 @@ import time
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import google.generativeai as genai
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 
 # --- Configuration ---
 # Database connection details from environment variables
@@ -66,11 +66,26 @@ def init_db():
                 print("Could not connect to the database after several retries.")
                 raise
 
-# --- Frontend Route ---
+# --- Frontend Routes ---
 @app.route('/')
 def index():
-    """Serves the main HTML page."""
-    return render_template('index.html')
+    """Redirects to the main entry page."""
+    return redirect(url_for('entry'))
+
+@app.route('/entry')
+def entry():
+    """Renders the score entry page."""
+    return render_template('entry.html')
+
+@app.route('/history')
+def history():
+    """Renders the score history page."""
+    return render_template('history.html')
+
+@app.route('/feedback')
+def feedback():
+    """Renders the AI feedback page."""
+    return render_template('feedback.html')
 
 # --- API Endpoints ---
 @app.route('/api/score', methods=['POST'])
@@ -184,12 +199,6 @@ def get_feedback():
         return jsonify({'error': f'Failed to generate feedback: {e}'}), 500
 
 # --- App Initialization ---
-# The init_db() is now better handled manually or with a startup script in a production environment.
-# For this docker-compose setup, we will rely on the app starting and being able to connect.
-# A simple init_db() call here might fail if the db is not ready.
-# The command in docker-compose.yml has a sleep to mitigate this.
-# A more robust solution would be a proper wait-for-it script.
-# For now, let's add a manual init command for flask.
 @app.cli.command("init-db")
 def init_db_command():
     """Initializes the database."""

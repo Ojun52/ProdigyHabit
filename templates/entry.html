@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}スコア入力 - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>生産性ログを追加</h2>
+    <form id="score-form">
+        <div>
+            <label for="date">日付:</label>
+            <input type="date" id="date" name="date" required>
+        </div>
+        <div>
+            <label for="score">スコア (0-100):</label>
+            <input type="number" id="score" name="score" min="0" max="100" required>
+        </div>
+        <div>
+            <label for="note">メモ:</label>
+            <input type="text" id="note" name="note" placeholder="（例）集中して作業できた">
+        </div>
+        <button type="submit">ログを保存</button>
+    </form>
+    <div id="save-status" class="status"></div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const scoreForm = document.getElementById('score-form');
+    const saveStatus = document.getElementById('save-status');
+    const dateInput = document.getElementById('date');
+
+    const toISODateString = (date) => date.toLocaleDateString('en-CA');
+    dateInput.value = toISODateString(new Date());
+
+    scoreForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        
+        const data = {
+            date: document.getElementById('date').value,
+            score: parseInt(document.getElementById('score').value, 10),
+            note: document.getElementById('note').value,
+        };
+
+        try {
+            const response = await fetch('/api/score', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+
+            const result = await response.json();
+            saveStatus.style.display = 'block';
+
+            if (response.ok && result.success) {
+                saveStatus.className = 'status success';
+                saveStatus.textContent = '成功: ' + (result.message || 'スコアを保存しました。');
+                scoreForm.reset();
+                dateInput.value = toISODateString(new Date());
+            } else {
+                throw new Error(result.error || '不明なエラー');
+            }
+        } catch (error) {
+            saveStatus.className = 'status error';
+            saveStatus.textContent = 'エラー: ' + error.message;
+        }
+    });
+});
+</script>
+{% endblock %}

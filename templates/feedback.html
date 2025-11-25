@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}AIフィードバック - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>AIフィードバック</h2>
+    <p>過去7日間のあなたの生産性ログに基づいて、AIが激励的なフィードバックと具体的な改善案を提案します。</p>
+    <button id="feedback-btn">フィードバックを取得</button>
+    <div id="feedback-container" style="margin-top: 1.5rem;">ここにAIからのフィードバックが表示されます。</div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const feedbackBtn = document.getElementById('feedback-btn');
+    const feedbackContainer = document.getElementById('feedback-container');
+
+    feedbackBtn.addEventListener('click', async () => {
+        feedbackContainer.innerHTML = 'AIからのフィードバックを生成中です...';
+        try {
+            const response = await fetch('/api/feedback');
+            const result = await response.json();
+
+            if (response.ok) {
+                feedbackContainer.innerHTML = marked.parse(result.feedback);
+            } else {
+                throw new Error(result.error || 'フィードバックの取得に失敗しました。');
+            }
+        } catch (error) {
+            feedbackContainer.textContent = 'エラー: ' + error.message;
+        }
+    });
+});
+</script>
+{% endblock %}

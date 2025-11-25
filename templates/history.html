@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}スコア履歴 - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h2>スコア履歴</h2>
+    <div class="history-nav">
+        <button id="prev-week-btn" class="nav-btn">&lt; 前の週</button>
+        <span id="week-display"></span>
+        <button id="next-week-btn" class="nav-btn">次の週 &gt;</button>
+    </div>
+    <table id="scores-table">
+        <thead>
+            <tr>
+                <th>日付</th>
+                <th>曜日</th>
+                <th>スコア</th>
+                <th>メモ</th>
+            </tr>
+        </thead>
+        <tbody id="scores-tbody">
+            <!-- Weekly score history will be populated here -->
+        </tbody>
+    </table>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const scoresTbody = document.getElementById('scores-tbody');
+    const prevWeekBtn = document.getElementById('prev-week-btn');
+    const nextWeekBtn = document.getElementById('next-week-btn');
+    const weekDisplay = document.getElementById('week-display');
+
+    let currentDate = new Date();
+    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+
+    const toISODateString = (date) => date.toLocaleDateString('en-CA');
+
+    const fetchAndDisplayScores = async (date) => {
+        const dateParam = toISODateString(date);
+        try {
+            const response = await fetch(`/api/scores?date=${dateParam}`);
+            if (!response.ok) throw new Error('スコア履歴の読み込みに失敗しました。');
+            
+            const data = await response.json();
+            scoresTbody.innerHTML = ''; // Clear existing rows
+            weekDisplay.textContent = `${data.week_start} ~ ${data.week_end}`;
+
+            const logsByDate = new Map(data.logs.map(log => [log.date, log]));
+            
+            for (let i = 0; i < 7; i++) {
+                const day = new Date(data.week_start);
+                // Adjust for timezone offset when creating date from string
+                day.setMinutes(day.getMinutes() + day.getTimezoneOffset());
+                day.setDate(day.getDate() + i);
+                
+                const dayString = toISODateString(day);
+                const dayOfWeek = dayNames[day.getDay()];
+
+                const log = logsByDate.get(dayString);
+                
+                const row = scoresTbody.insertRow();
+                row.innerHTML = `
+                    <td>${dayString}</td>
+                    <td>${dayOfWeek}</td>
+                    <td>${log ? log.score : '—'}</td>
+                    <td>${log ? (log.note || '') : ''}</td>
+                `;
+            }
+        } catch (error) {
+            scoresTbody.innerHTML = `<tr><td colspan="4" class="error">${error.message}</td></tr>`;
+        }
+    };
+    
+    prevWeekBtn.addEventListener('click', () => {
+        currentDate.setDate(currentDate.getDate() - 7);
+        fetchAndDisplayScores(currentDate);
+    });
+
+    nextWeekBtn.addEventListener('click', () => {
+        currentDate.setDate(currentDate.getDate() + 7);
+        fetchAndDisplayScores(currentDate);
+    });
+
+    // Initial Load
+    fetchAndDisplayScores(currentDate);
+});
+</script>
+{% endblock %}
