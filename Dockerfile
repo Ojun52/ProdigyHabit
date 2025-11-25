@@ -17,7 +17,5 @@ COPY . .
 # EXPOSE will be handled by docker-compose, but it's good practice to document it
 # EXPOSE ${PORT}
 
-RUN flask init-db
-
 # Run app.py using Gunicorn when the container launches (using shell form to allow variable substitution)
 CMD gunicorn --workers 4 --bind 0.0.0.0:$PORT app:app
