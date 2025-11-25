@@ -13,8 +13,8 @@
         form { display: grid; grid-template-columns: 1fr; gap: 1rem; }
         label { font-weight: 600; }
         input[type="date"], input[type="number"], input[type="text"] { padding: 0.75rem; border: 1px solid #ced4da; border-radius: 4px; font-size: 1rem; }
-        button { padding: 0.75rem 1.5rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; font-weight: 500; transition: background-color 0.2s; }
-        button:hover { background-color: #0056b3; }
+        button, .nav-btn { padding: 0.75rem 1.5rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; font-weight: 500; transition: background-color 0.2s; }
+        button:hover, .nav-btn:hover { background-color: #0056b3; }
         #feedback-btn { background-color: #28a745; }
         #feedback-btn:hover { background-color: #218838; }
         #feedback-container { background: #e9ecef; padding: 1.5rem; border-radius: 4px; line-height: 1.6; min-height: 50px; }
@@ -25,6 +25,7 @@
         table { width: 100%; border-collapse: collapse; margin-top: 1.5rem; }
         th, td { text-align: left; padding: 0.75rem; border-bottom: 1px solid #dee2e6; }
         th { background-color: #e9ecef; }
+        .history-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; }
     </style>
 </head>
 <body>
@@ -52,16 +53,22 @@
 
     <div class="container">
         <h2>スコア履歴</h2>
+        <div class="history-nav">
+            <button id="prev-week-btn" class="nav-btn">&lt; 前の週</button>
+            <span id="week-display"></span>
+            <button id="next-week-btn" class="nav-btn">次の週 &gt;</button>
+        </div>
         <table id="scores-table">
             <thead>
                 <tr>
                     <th>日付</th>
+                    <th>曜日</th>
                     <th>スコア</th>
                     <th>メモ</th>
                 </tr>
             </thead>
             <tbody id="scores-tbody">
-                <!-- Score history will be populated here -->
+                <!-- Weekly score history will be populated here -->
             </tbody>
         </table>
     </div>
@@ -79,40 +86,52 @@
             const feedbackBtn = document.getElementById('feedback-btn');
             const feedbackContainer = document.getElementById('feedback-container');
             const scoresTbody = document.getElementById('scores-tbody');
-
-            // --- Set default date to today ---
+            const prevWeekBtn = document.getElementById('prev-week-btn');
+            const nextWeekBtn = document.getElementById('next-week-btn');
+            const weekDisplay = document.getElementById('week-display');
             const dateInput = document.getElementById('date');
-            const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format
-            dateInput.value = today;
 
-            // --- Fetch and display all scores ---
-            const fetchAndDisplayScores = async () => {
+            let currentDate = new Date();
+            const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+
+            const toISODateString = (date) => date.toLocaleDateString('en-CA');
+
+            // --- Fetch and display weekly scores ---
+            const fetchAndDisplayScores = async (date) => {
+                const dateParam = toISODateString(date);
                 try {
-                    const response = await fetch('/api/scores');
+                    const response = await fetch(`/api/scores?date=${dateParam}`);
                     if (!response.ok) throw new Error('スコア履歴の読み込みに失敗しました。');
                     
-                    const scores = await response.json();
+                    const data = await response.json();
                     scoresTbody.innerHTML = ''; // Clear existing rows
+                    weekDisplay.textContent = `${data.week_start} ~ ${data.week_end}`;
 
-                    if (scores.length > 0) {
-                        scores.forEach(log => {
-                            const row = scoresTbody.insertRow();
-                            row.innerHTML = `
-                                <td>${log.date}</td>
-                                <td>${log.score}</td>
-                                <td>${log.note || ''}</td>
-                            `;
-                        });
-                    } else {
+                    const logsByDate = new Map(data.logs.map(log => [log.date, log]));
+                    
+                    for (let i = 0; i < 7; i++) {
+                        const day = new Date(data.week_start);
+                        day.setDate(day.getDate() + i);
+                        const dayString = toISODateString(day);
+                        const dayOfWeek = dayNames[day.getDay()]; // Get day of the week
+
+                        const log = logsByDate.get(dayString);
+                        
                         const row = scoresTbody.insertRow();
-                        const cell = row.insertCell();
-                        cell.colSpan = 3;
-                        cell.textContent = 'まだスコアが記録されていません。';
+                        row.innerHTML = `
+                            <td>${dayString}</td>
+                            <td>${dayOfWeek}</td>
+                            <td>${log ? log.score : '—'}</td>
+                            <td>${log ? (log.note || '') : ''}</td>
+                        `;
                     }
                 } catch (error) {
-                    scoresTbody.innerHTML = `<tr><td colspan="3" class="error">${error.message}</td></tr>`;
+                    scoresTbody.innerHTML = `<tr><td colspan="4" class="error">${error.message}</td></tr>`;
                 }
             };
+
+            // --- Set default date to today ---
+            dateInput.value = toISODateString(new Date());
 
             // --- Handle Log Submission ---
             scoreForm.addEventListener('submit', async (event) => {
@@ -138,8 +157,8 @@
                         saveStatus.className = 'status success';
                         saveStatus.textContent = '成功: ' + (result.message || 'スコアを保存しました。');
                         scoreForm.reset();
-                        dateInput.value = today;
-                        await fetchAndDisplayScores(); // Refresh the history table
+                        dateInput.value = toISODateString(new Date());
+                        await fetchAndDisplayScores(new Date(data.date));
                     } else {
                         throw new Error(result.error || '不明なエラー');
                     }
@@ -147,6 +166,17 @@
                     saveStatus.className = 'status error';
                     saveStatus.textContent = 'エラー: ' + error.message;
                 }
+            });
+            
+            // --- Handle Week Navigation ---
+            prevWeekBtn.addEventListener('click', () => {
+                currentDate.setDate(currentDate.getDate() - 7);
+                fetchAndDisplayScores(currentDate);
+            });
+
+            nextWeekBtn.addEventListener('click', () => {
+                currentDate.setDate(currentDate.getDate() + 7);
+                fetchAndDisplayScores(currentDate);
             });
 
             // --- Handle Feedback Request ---
@@ -167,7 +197,7 @@
             });
 
             // --- Initial Load ---
-            fetchAndDisplayScores();
+            fetchAndDisplayScores(currentDate);
         });
     </script>
 

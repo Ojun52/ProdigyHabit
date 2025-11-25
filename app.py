@@ -103,17 +103,41 @@ def save_score():
 
 @app.route('/api/scores', methods=['GET'])
 def get_scores():
+    """
+    Fetches score logs for a specific week.
+    Accepts a 'date' query parameter (YYYY-MM-DD).
+    Defaults to the current week if no date is provided.
+    """
+    date_str = request.args.get('date')
     try:
+        if date_str:
+            target_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+        else:
+            target_date = datetime.date.today()
+
+        # Calculate the start of the week (Monday) and end of the week (Sunday)
+        start_of_week = target_date - datetime.timedelta(days=target_date.weekday())
+        end_of_week = start_of_week + datetime.timedelta(days=6)
+
         conn = get_db_connection()
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute('SELECT date, score, note FROM daily_log ORDER BY date DESC')
+            cursor.execute(
+                'SELECT date, score, note FROM daily_log WHERE date >= %s AND date <= %s ORDER BY date ASC',
+                (start_of_week, end_of_week)
+            )
             logs = cursor.fetchall()
         conn.close()
+
         # Convert date objects to strings
         for log in logs:
             if isinstance(log['date'], datetime.date):
                 log['date'] = log['date'].isoformat()
-        return jsonify(logs)
+        
+        return jsonify({
+            "week_start": start_of_week.isoformat(),
+            "week_end": end_of_week.isoformat(),
+            "logs": logs
+        })
     except Exception as e:
         return jsonify({'error': f'Failed to fetch scores: {e}'}), 500
 
