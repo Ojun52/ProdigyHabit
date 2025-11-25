@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.10-slim
+FROM python:3.14-slim
 
 # Set the working directory in the container
 WORKDIR /app
@@ -13,12 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application's code to the working directory
 COPY . .
 
-# Make port 5002 available to the world outside this container
-EXPOSE 5002
+# The PORT environment variable is expected to be set by the runtime environment (e.g., docker-compose)
+# EXPOSE will be handled by docker-compose, but it's good practice to document it
+# EXPOSE ${PORT}
 
-# Define environment variable
-ENV FLASK_APP app.py
-ENV FLASK_RUN_HOST 0.0.0.0
-
-# Run app.py when the container launches
-CMD ["flask", "run"]
+# Run app.py using Gunicorn when the container launches (using shell form to allow variable substitution)
+CMD gunicorn --workers 4 --bind 0.0.0.0:$PORT app:app
