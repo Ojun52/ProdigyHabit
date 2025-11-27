@@ -17,24 +17,34 @@
     <main class="container">
         <header>
             <hgroup style="text-align: center;">
-                <h1>ProdigyHabit</h1>
+                <h1><a href="{{ url_for('index') }}" style="text-decoration: none; color: inherit;">ProdigyHabit</a></h1>
                 <p>生産性ログとAIフィードバック</p>
             </hgroup>
+            {% if current_user.is_authenticated %}
             <nav class="top-nav">
                 <ul>
+                    <li><a role="button" href="{{ url_for('index') }}" class="{{ 'secondary' if request.endpoint != 'index' else '' }}">ホーム🏠</a></li>
                     <li><a role="button" href="{{ url_for('entry') }}" class="{{ 'secondary' if request.endpoint != 'entry' else '' }}">入力✍️</a></li>
                     <li><a role="button" href="{{ url_for('history') }}" class="{{ 'secondary' if request.endpoint != 'history' else '' }}">履歴📈</a></li>
                     <li><a role="button" href="{{ url_for('feedback') }}" class="{{ 'secondary' if request.endpoint != 'feedback' else '' }}">AIフィードバック💡</a></li>
                 </ul>
             </nav>
+            {% endif %}
         </header>
 
         {% block content %}{% endblock %}
     </main>
 
+    {% if current_user.is_authenticated %}
     <!-- Footer Navigation -->
     <nav id="footer-nav">
         <ul>
+            <li>
+                <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' else '' }}">
+                    <i class="material-icons">home</i>
+                    <span>ホーム</span>
+                </a>
+            </li>
             <li>
                 <a href="{{ url_for('entry') }}" class="{{ 'active' if request.endpoint == 'entry' else '' }}">
                     <i class="material-icons">edit</i>
@@ -55,5 +65,6 @@
             </li>
         </ul>
     </nav>
+    {% endif %}
 </body>
 </html>

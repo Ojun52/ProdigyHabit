@@ -3,3 +3,7 @@ google-generativeai
 psycopg2-binary
 Flask-SQLAlchemy
 gunicorn
+Authlib
+Flask-Login
+python-dotenv
+requests

@@ -1,11 +1,19 @@
 import datetime
 import json
+import logging
 import os
 import time
 
 import google.generativeai as genai
+from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
+from flask_login import (LoginManager, UserMixin, current_user,
+                         login_required, login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
+from authlib.integrations.flask_client import OAuth
+
+# --- Load Environment Variables ---
+load_dotenv()
 
 # --- Configuration ---
 # Database connection details from environment variables
@@ -29,21 +37,44 @@ app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.json.ensure_ascii = False
+app.secret_key = os.getenv("FLASK_APP_SECRET_KEY")
+if not app.secret_key:
+    raise ValueError("No FLASK_APP_SECRET_KEY set for Flask application")
+
 
 db = SQLAlchemy(app)
+oauth = OAuth(app)
 
 # --- AI Configuration ---
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
 
-# --- Database Model ---
+# --- User Authentication (Flask-Login) ---
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login' # Redirect to /login if user is not authenticated
 
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# --- Database Models ---
+
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    google_id = db.Column(db.String(128), unique=True, nullable=False)
+    email = db.Column(db.String(128), unique=True, nullable=False)
+    name = db.Column(db.String(128), nullable=True)
+    logs = db.relationship('DailyLog', backref='user', lazy=True)
 
 class DailyLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, unique=True, nullable=False)
+    date = db.Column(db.Date, nullable=False)
     score = db.Column(db.Integer, nullable=False)
     note = db.Column(db.Text, nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+
+    __table_args__ = (db.UniqueConstraint('date', 'user_id', name='_date_user_uc'),)
 
     def to_dict(self):
         return {
@@ -52,36 +83,98 @@ class DailyLog(db.Model):
             "note": self.note
         }
 
-# --- Frontend Routes ---
+# --- Google OAuth Configuration ---
+google = oauth.register(
+    name='google',
+    client_id=os.getenv("GOOGLE_CLIENT_ID"),
+    client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
+    access_token_url='https://accounts.google.com/o/oauth2/token',
+    access_token_params=None,
+    authorize_url='https://accounts.google.com/o/oauth2/auth',
+    authorize_params=None,
+    api_base_url='https://www.googleapis.com/oauth2/v1/',
+    userinfo_endpoint='https://openidconnect.googleapis.com/v1/userinfo',
+    client_kwargs={'scope': 'openid email profile'},
+    jwks_uri="https://www.googleapis.com/oauth2/v3/certs",
+)
 
+# --- Authentication Routes ---
+
+@app.route('/login')
+def login():
+    # Determine the redirect URI based on the request environment
+    # For Render, it uses HTTPS. For local, HTTP.
+    redirect_uri = url_for('auth_callback', _external=True, _scheme='https')
+    if '127.0.0.1' in redirect_uri or 'localhost' in redirect_uri:
+        redirect_uri = url_for('auth_callback', _external=True)
+    
+    return google.authorize_redirect(redirect_uri)
+
+
+@app.route('/auth/callback')
+def auth_callback():
+    try:
+        token = google.authorize_access_token()
+        user_info = google.get('userinfo').json()
+    except Exception as e:
+        logging.error(f"Error during OAuth callback: {e}")
+        return redirect(url_for('login'))
+
+    google_id = user_info['id']
+    email = user_info['email']
+    name = user_info.get('name')
+
+    user = User.query.filter_by(google_id=google_id).first()
+    if not user:
+        user = User(google_id=google_id, email=email, name=name)
+        db.session.add(user)
+        db.session.commit()
+
+    login_user(user)
+    return redirect(url_for('index'))
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
+
+
+# --- Frontend Routes ---
 
 @app.route('/')
 def index():
-    """Redirects to the main entry page."""
-    return redirect(url_for('entry'))
+    todays_log_exists = False
+    if current_user.is_authenticated:
+        today = datetime.date.today()
+        log = DailyLog.query.filter_by(user_id=current_user.id, date=today).first()
+        if log:
+            todays_log_exists = True
+    return render_template('home.html', todays_log_exists=todays_log_exists)
 
 
 @app.route('/entry')
+@login_required
 def entry():
-    """Renders the score entry page."""
     return render_template('entry.html')
 
 
 @app.route('/history')
+@login_required
 def history():
-    """Renders the score history page."""
     return render_template('history.html')
 
 
 @app.route('/feedback')
+@login_required
 def feedback():
-    """Renders the AI feedback page."""
     return render_template('feedback.html')
 
 # --- API Endpoints ---
 
-
 @app.route('/api/score', methods=['POST'])
+@login_required
 def save_score():
     data = request.get_json()
     if not data or not all(k in data for k in ['date', 'score']):
@@ -90,18 +183,16 @@ def save_score():
     try:
         log_date = datetime.datetime.strptime(data['date'], '%Y-%m-%d').date()
 
-        # Find existing log or create a new one
-        log = DailyLog.query.filter_by(date=log_date).first()
+        log = DailyLog.query.filter_by(date=log_date, user_id=current_user.id).first()
         if log:
-            # Update existing log
             log.score = data['score']
             log.note = data.get('note', '')
         else:
-            # Create new log
             log = DailyLog(
                 date=log_date,
                 score=data['score'],
-                note=data.get('note', '')
+                note=data.get('note', ''),
+                user_id=current_user.id
             )
             db.session.add(log)
 
@@ -109,24 +200,22 @@ def save_score():
         return jsonify({'success': True, 'message': 'Score saved successfully.'}), 201
     except Exception as e:
         db.session.rollback()
-        return jsonify({'error': f'An unexpected error occurred: {e}'}), 500
+        logging.error(f"Error saving score for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
 
 
 @app.route('/api/scores', methods=['GET'])
+@login_required
 def get_scores():
     date_str = request.args.get('date')
     try:
-        if date_str:
-            target_date = datetime.datetime.strptime(
-                date_str, '%Y-%m-%d').date()
-        else:
-            target_date = datetime.date.today()
+        target_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else datetime.date.today()
 
-        start_of_week = target_date - \
-            datetime.timedelta(days=target_date.weekday())
+        start_of_week = target_date - datetime.timedelta(days=target_date.weekday())
         end_of_week = start_of_week + datetime.timedelta(days=6)
 
         logs = DailyLog.query.filter(
+            DailyLog.user_id == current_user.id,
             DailyLog.date >= start_of_week,
             DailyLog.date <= end_of_week
         ).order_by(DailyLog.date.asc()).all()
@@ -137,19 +226,22 @@ def get_scores():
             "logs": [log.to_dict() for log in logs]
         })
     except Exception as e:
-        return jsonify({'error': f'Failed to fetch scores: {e}'}), 500
+        logging.error(f"Error fetching scores for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
 
 
 @app.route('/api/feedback', methods=['GET'])
+@login_required
 def get_feedback():
     try:
         seven_days_ago = datetime.date.today() - datetime.timedelta(days=6)
         logs = DailyLog.query.filter(
+            DailyLog.user_id == current_user.id,
             DailyLog.date >= seven_days_ago
         ).order_by(DailyLog.date.desc()).all()
 
-        if not logs:
-            return jsonify({'feedback': 'Not enough data for feedback. Please log your productivity for a few days.'})
+        if len(logs) < 2:
+            return jsonify({'feedback': 'Not enough data for feedback. Please log your productivity for at least two days.'})
 
         log_data = [log.to_dict() for log in logs]
 
@@ -168,21 +260,17 @@ def get_feedback():
 3. **具体的な行動改善提案（3点）**: 課題を解決し、生産性レベルを向上させるための、具体的で実行可能な改善策を3つの箇条書き（ステップ）で提案してください。
 """
         response = model.generate_content(prompt_template)
-
         return jsonify({'feedback': response.text})
 
     except Exception as e:
-        return jsonify({'error': f'Failed to generate feedback: {e}'}), 500
+        logging.error(f"Error generating feedback for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
 
 # --- App Initialization ---
-
 
 @app.cli.command("init-db")
 def init_db_command():
     """Initializes the database by creating all tables."""
-    # A short delay to allow the DB container to be ready
-    # In a real-world app, use a more robust wait-for-it script
-    from sqlalchemy.exc import OperationalError
     retries = 5
     delay = 5
     for i in range(retries):
@@ -190,12 +278,11 @@ def init_db_command():
             db.create_all()
             print("Database initialized successfully.")
             return
-        except OperationalError as e:
+        except Exception as e:
             print(f"Database connection failed: {e}")
             if i < retries - 1:
                 print(f"Retrying in {delay} seconds...")
                 time.sleep(delay)
             else:
                 print("Could not connect to the database after several retries.")
-                raise
                 raise
