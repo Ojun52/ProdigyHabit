@@ -51,6 +51,8 @@ article header {
     display: flex;
     justify-content: center;
     align-items: center;
+    flex-direction: column; /* Stack children vertically */
+    gap: 0.5rem; /* Add space between stacked children */
 }
 article h2 {
     margin-bottom: 0;

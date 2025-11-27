@@ -307,6 +307,51 @@ def get_feedback():
             f"Error generating feedback for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
 
+
+@app.route('/api/evaluate', methods=['POST'])
+@login_required
+def evaluate_log():
+    data = request.get_json()
+    log_text = data.get('log_text')
+
+    if not log_text:
+        return jsonify({'error': 'Missing log_text'}), 400
+
+    system_instruction = """
+あなたは公正で客観的な生産性コーチです。
+ユーザーの活動ログに基づき、0〜100点のスコアと、50文字以内の簡潔なフィードバックを出力してください。
+採点基準:
+* 90-100点 (卓越): ディープワーク（深い集中）、高難易度タスクの完了、新しいスキルの習得。
+* 70-89点 (良): 予定通りのタスク消化、ルーティンワークの遂行、適切な休憩。
+* 50-69点 (可): 多少の進捗はあるが、非効率や集中切れが目立つ。
+* 0-49点 (不可): 明らかな怠惰、先延ばし、無意味な時間の浪費。
+出力形式: 以下のJSONスキーマに従うこと。
+{"score": integer, "comment": string}
+"""
+
+    try:
+        # Configure the model to return JSON
+        json_model = genai.GenerativeModel(
+            'gemini-2.5-flash',
+            generation_config={"response_mime_type": "application/json"}
+        )
+        
+        # Combine the system instruction with the user's log text
+        prompt = f"{system_instruction}\n\n活動ログ: \"{log_text}\""
+        
+        response = json_model.generate_content(prompt)
+        
+        # The response.text should be a valid JSON string
+        evaluation = json.loads(response.text)
+        
+        return jsonify(evaluation)
+
+    except Exception as e:
+        logging.error(f"Error during AI evaluation for user {current_user.id}: {e}")
+        # Return a more informative error
+        return jsonify({'error': 'AI evaluation failed.', 'details': str(e)}), 500
+
+
 # --- App Initialization ---
 
 
