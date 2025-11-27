@@ -7,6 +7,7 @@
     <header>
         <h2>今日の活動ログ</h2>
         <p>今日一日の活動内容を具体的に入力してください。AIが生産性スコアを採点します。</p>
+        <p>これ以前に入力した今日のログも参照されます。毎回1日のはじめから書く必要はありません。</p>
     </header>
     <form id="evaluation-form">
         <label for="date">
@@ -65,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const evaluateResponse = await fetch('/api/evaluate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ log_text: logText }),
+                body: JSON.stringify({ log_text: logText, date: logDate }),
             });
 
             if (!evaluateResponse.ok) {
@@ -80,12 +81,15 @@ document.addEventListener('DOMContentLoaded', () => {
             resultComment.textContent = evaluation.comment;
             resultContainer.style.display = 'block';
             saveStatus.textContent = '採点が完了しました。結果を保存しています...';
+            
+            // Update textarea with the full log that was evaluated
+            logTextInput.value = evaluation.combined_log;
 
             // --- Step 2: Save the log with the AI-generated score ---
             const dataToSave = {
                 date: logDate,
                 score: evaluation.score,
-                note: logText, // Save the original log text as the note
+                note: evaluation.combined_log, // Save the combined log text as the note
             };
 
             const saveResponse = await fetch('/api/score', {
@@ -98,12 +102,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (saveResponse.ok && saveResult.success) {
                 saveStatus.innerHTML = `<mark class="success">ログの保存に成功しました！</mark>`;
-                // Optionally reset the form after a delay
+                // On successful save, we don't reset the form immediately
+                // so the user can add more logs to the same day.
+                // The textarea already contains the full combined log.
+                // We just clear the status message after a delay.
                 setTimeout(() => {
-                    evaluationForm.reset();
-                    dateInput.value = toISODateString(new Date());
-                    resultContainer.style.display = 'none';
-                }, 3000);
+                   saveStatus.innerHTML = '';
+                }, 5000);
             } else {
                 throw new Error(saveResult.error || 'データベースへの保存中にエラーが発生しました。');
             }

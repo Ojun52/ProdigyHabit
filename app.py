@@ -313,11 +313,24 @@ def get_feedback():
 def evaluate_log():
     data = request.get_json()
     log_text = data.get('log_text')
+    date_str = data.get('date')
 
-    if not log_text:
-        return jsonify({'error': 'Missing log_text'}), 400
+    if not all([log_text, date_str]):
+        return jsonify({'error': 'Missing log_text or date'}), 400
 
-    system_instruction = """
+    try:
+        log_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+
+        # Check for previous log entry for the same day
+        previous_log = DailyLog.query.filter_by(
+            date=log_date, user_id=current_user.id).first()
+
+        if previous_log and previous_log.note:
+            combined_log = f"(以前のログ)\n{previous_log.note}\n\n(今回の追加ログ)\n{log_text}"
+        else:
+            combined_log = log_text
+
+        system_instruction = """
 あなたは公正で客観的な生産性コーチです。
 ユーザーの活動ログに基づき、0〜100点のスコアと、50文字以内の簡潔なフィードバックを出力してください。
 採点基準:
@@ -329,7 +342,6 @@ def evaluate_log():
 {"score": integer, "comment": string}
 """
 
-    try:
         # Configure the model to return JSON
         json_model = genai.GenerativeModel(
             'gemini-2.5-flash',
@@ -337,12 +349,15 @@ def evaluate_log():
         )
         
         # Combine the system instruction with the user's log text
-        prompt = f"{system_instruction}\n\n活動ログ: \"{log_text}\""
+        prompt = f"{system_instruction}\n\n活動ログ全体:\n\"\"\"\n{combined_log}\n\"\"\""
         
         response = json_model.generate_content(prompt)
         
         # The response.text should be a valid JSON string
         evaluation = json.loads(response.text)
+        
+        # Add the combined log to the response for the frontend to use
+        evaluation['combined_log'] = combined_log
         
         return jsonify(evaluation)
 
