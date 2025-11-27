@@ -5,12 +5,12 @@ import os
 import time
 
 import google.generativeai as genai
+from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
-from flask_login import (LoginManager, UserMixin, current_user,
-                         login_required, login_user, logout_user)
+from flask_login import (LoginManager, UserMixin, current_user, login_required,
+                         login_user, logout_user)
 from flask_sqlalchemy import SQLAlchemy
-from authlib.integrations.flask_client import OAuth
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -52,13 +52,16 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 # --- User Authentication (Flask-Login) ---
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login' # Redirect to /login if user is not authenticated
+# Redirect to /login if user is not authenticated
+login_manager.login_view = 'login'
+
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 # --- Database Models ---
+
 
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -67,6 +70,7 @@ class User(UserMixin, db.Model):
     name = db.Column(db.String(128), nullable=True)
     logs = db.relationship('DailyLog', backref='user', lazy=True)
 
+
 class DailyLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date = db.Column(db.Date, nullable=False)
@@ -74,7 +78,8 @@ class DailyLog(db.Model):
     note = db.Column(db.Text, nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-    __table_args__ = (db.UniqueConstraint('date', 'user_id', name='_date_user_uc'),)
+    __table_args__ = (db.UniqueConstraint(
+        'date', 'user_id', name='_date_user_uc'),)
 
     def to_dict(self):
         return {
@@ -82,6 +87,7 @@ class DailyLog(db.Model):
             "score": self.score,
             "note": self.note
         }
+
 
 # --- Google OAuth Configuration ---
 google = oauth.register(
@@ -100,6 +106,7 @@ google = oauth.register(
 
 # --- Authentication Routes ---
 
+
 @app.route('/login')
 def login():
     # Determine the redirect URI based on the request environment
@@ -107,7 +114,7 @@ def login():
     redirect_uri = url_for('auth_callback', _external=True, _scheme='https')
     if '127.0.0.1' in redirect_uri or 'localhost' in redirect_uri:
         redirect_uri = url_for('auth_callback', _external=True)
-    
+
     return google.authorize_redirect(redirect_uri)
 
 
@@ -148,7 +155,8 @@ def index():
     todays_log_exists = False
     if current_user.is_authenticated:
         today = datetime.date.today()
-        log = DailyLog.query.filter_by(user_id=current_user.id, date=today).first()
+        log = DailyLog.query.filter_by(
+            user_id=current_user.id, date=today).first()
         if log:
             todays_log_exists = True
     return render_template('home.html', todays_log_exists=todays_log_exists)
@@ -171,12 +179,14 @@ def history():
 def feedback():
     return render_template('feedback.html')
 
+
 @app.route('/graph')
 @login_required
 def graph():
     return render_template('graph.html')
 
 # --- API Endpoints ---
+
 
 @app.route('/api/score', methods=['POST'])
 @login_required
@@ -188,7 +198,8 @@ def save_score():
     try:
         log_date = datetime.datetime.strptime(data['date'], '%Y-%m-%d').date()
 
-        log = DailyLog.query.filter_by(date=log_date, user_id=current_user.id).first()
+        log = DailyLog.query.filter_by(
+            date=log_date, user_id=current_user.id).first()
         if log:
             log.score = data['score']
             log.note = data.get('note', '')
@@ -214,9 +225,11 @@ def save_score():
 def get_scores():
     date_str = request.args.get('date')
     try:
-        target_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else datetime.date.today()
+        target_date = datetime.datetime.strptime(
+            date_str, '%Y-%m-%d').date() if date_str else datetime.date.today()
 
-        start_of_week = target_date - datetime.timedelta(days=target_date.weekday())
+        start_of_week = target_date - \
+            datetime.timedelta(days=target_date.weekday())
         end_of_week = start_of_week + datetime.timedelta(days=6)
 
         logs = DailyLog.query.filter(
@@ -247,7 +260,8 @@ def get_all_scores():
             "logs": [log.to_dict() for log in logs]
         })
     except Exception as e:
-        logging.error(f"Error fetching all scores for user {current_user.id}: {e}")
+        logging.error(
+            f"Error fetching all scores for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
 
 
@@ -267,27 +281,34 @@ def get_feedback():
         log_data = [log.to_dict() for log in logs]
 
         prompt_template = f"""
-あなたは、生産性向上のためのフィードバックを生成するAIアシスタントです。
-以下のJSONデータは、ユーザーの過去数日間の生産性ログです。各オブジェクトは1日を表します。
+あなたは、生産性向上のためのコーチングAIです。
+以下のJSONデータは、ユーザーの過去数日間の生産性ログです。
 - 'date': 日付
 - 'score': 100点満点の生産性スコア
-- 'note': その日の行動に関するメモや反省点
+- 'note': その日の行動に関するメモ
+
 --- データ ---
 {json.dumps(log_data, indent=2, ensure_ascii=False)}
 --- データ ---
-上記のデータに基づいて、以下の分析とフィードバックを日本語で生成してください。回答のトーンは激励的でプロフェッショナルであること。
-1. **ポジティブなパターン（1点）**: スコアが高い日に共通する行動や習慣を一つ特定し、ユーザーを褒めてください。
-2. **改善すべき課題（1点）**: スコアが低い日に共通する問題点や非効率な行動を一つ特定してください。
-3. **具体的な行動改善提案（3点）**: 課題を解決し、生産性レベルを向上させるための、具体的で実行可能な改善策を3つの箇条書き（ステップ）で提案してください。
+
+上記のデータに基づき、以下の2点について、簡潔かつ激励的なフィードバックを日本語で生成してください。
+
+1. **総括**: ユーザーの生産性トレンドを3文以内で要約してください。良いところと改善点の両方に触れてください。
+2. **ワンポイントアドバイス**: 生産性をさらに向上させるための、最も効果的で具体的な行動を2つ提案してください。
+
+注意: 行動を提案するときは、ユーザーの過去のメモを参考にし、同じ行動を繰り返すのではなく、新しい視点や方法を提供してください。
+また、具体的な行動を提示してください。精神論ではなく、ウィルパワーがない人でも「仕組み化」して実行できるような内容にしてください。
 """
         response = model.generate_content(prompt_template)
         return jsonify({'feedback': response.text})
 
     except Exception as e:
-        logging.error(f"Error generating feedback for user {current_user.id}: {e}")
+        logging.error(
+            f"Error generating feedback for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
 
 # --- App Initialization ---
+
 
 @app.cli.command("init-db")
 def init_db_command():
