@@ -171,6 +171,11 @@ def history():
 def feedback():
     return render_template('feedback.html')
 
+@app.route('/graph')
+@login_required
+def graph():
+    return render_template('graph.html')
+
 # --- API Endpoints ---
 
 @app.route('/api/score', methods=['POST'])
@@ -227,6 +232,22 @@ def get_scores():
         })
     except Exception as e:
         logging.error(f"Error fetching scores for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
+
+
+@app.route('/api/all_scores', methods=['GET'])
+@login_required
+def get_all_scores():
+    try:
+        logs = DailyLog.query.filter(
+            DailyLog.user_id == current_user.id
+        ).order_by(DailyLog.date.asc()).all()
+
+        return jsonify({
+            "logs": [log.to_dict() for log in logs]
+        })
+    except Exception as e:
+        logging.error(f"Error fetching all scores for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
 
 

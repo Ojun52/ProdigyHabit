@@ -26,6 +26,7 @@
                     <li><a role="button" href="{{ url_for('index') }}" class="{{ 'secondary' if request.endpoint != 'index' else '' }}">ホーム🏠</a></li>
                     <li><a role="button" href="{{ url_for('entry') }}" class="{{ 'secondary' if request.endpoint != 'entry' else '' }}">入力✍️</a></li>
                     <li><a role="button" href="{{ url_for('history') }}" class="{{ 'secondary' if request.endpoint != 'history' else '' }}">履歴📈</a></li>
+                    <li><a role="button" href="{{ url_for('graph') }}" class="{{ 'secondary' if request.endpoint != 'graph' else '' }}">グラフ📊</a></li>
                     <li><a role="button" href="{{ url_for('feedback') }}" class="{{ 'secondary' if request.endpoint != 'feedback' else '' }}">AIフィードバック💡</a></li>
                 </ul>
             </nav>
@@ -55,6 +56,12 @@
                 <a href="{{ url_for('history') }}" class="{{ 'active' if request.endpoint == 'history' else '' }}">
                     <i class="material-icons">bar_chart</i>
                     <span>履歴</span>
+                </a>
+            </li>
+            <li>
+                <a href="{{ url_for('graph') }}" class="{{ 'active' if request.endpoint == 'graph' else '' }}">
+                    <i class="material-icons">show_chart</i>
+                    <span>グラフ</span>
                 </a>
             </li>
             <li>

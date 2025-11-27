@@ -1,6 +1,6 @@
 /* Custom styles for navigation buttons */
 main.container {
-    max-width: 600px; /* Adjust container width for better mobile experience */
+    max-width: 800px; /* Adjust container width for better mobile experience */
 }
 
 /* Add padding to body to prevent footer overlap */
@@ -71,7 +71,7 @@ article h2 {
     display: flex;
     padding: 0.5rem 0; /* Remove horizontal padding, let li handle it */
     margin: 0 auto; /* Center the ul block itself */
-    max-width: 600px; /* Constrain ul width to prevent stretching on wider mobiles */
+    max-width: 800px; /* Constrain ul width to prevent stretching on wider mobiles */
     list-style: none; /* Ensure no list bullets */
     gap: 1rem; /* Add gap between li items */
 }

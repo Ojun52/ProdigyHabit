@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}スコアグラフ - {{ super() }}{% endblock %}
+
+{% block content %}
+<style>
+    /* For mobile devices, ensure the canvas is responsive */
+    .chart-container {
+        position: relative;
+        margin: auto;
+        height: 60vh;
+        width: 100%;
+    }
+</style>
+
+<article>
+    <header>
+        <h2>生産性スコアの推移</h2>
+    </header>
+    <div class="chart-container">
+        <canvas id="scoreChart"></canvas>
+    </div>
+</article>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // 1. Fetch data from the API
+        const response = await fetch('/api/all_scores');
+        if (!response.ok) {
+            throw new Error('グラフデータの読み込みに失敗しました。');
+        }
+        const data = await response.json();
+        const logs = data.logs;
+
+        if (logs.length === 0) {
+            document.querySelector('.chart-container').innerHTML = '<p>表示するデータがまだありません。まずは日々の記録をつけましょう。</p>';
+            return;
+        }
+
+        // 2. Process data for Chart.js
+        const labels = logs.map(log => log.date);
+        const scores = logs.map(log => log.score);
+
+        // Determine text color and grid color based on theme
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const isDarkMode = currentTheme === 'dark';
+
+        // ダークモード判定に関係なく、常に白文字・白グリッドにする
+        const textColor = '#FFFFFF'; 
+        const gridColor = 'rgba(255, 255, 255, 0.2)';
+
+
+        // 3. Render the chart
+        const ctx = document.getElementById('scoreChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '生産性スコア',
+                    data: scores,
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    // Make the line a smooth curve
+                    tension: 0 
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        // Fix Y-axis from 0 to 100
+                        min: 0,
+                        max: 100, 
+                        beginAtZero: true,
+                        ticks: { 
+                            color: textColor,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
+                        grid: { color: gridColor }
+                    },
+                    x: {
+                        ticks: { 
+                            color: textColor,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        },
+                        grid: { color: gridColor }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: textColor,
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            // You can customize tooltips here if needed
+                            // label: function(context) {
+                            //     let label = context.dataset.label || '';
+                            //     if (label) {
+                            //         label += ': ';
+                            //     }
+                            //     if (context.parsed.y !== null) {
+                            //         label += context.parsed.y + '点';
+                            //     }
+                            //     return label;
+                            // }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (error) {
+        document.querySelector('.chart-container').innerHTML = `<p style="color: red;">${error.message}</p>`;
+    }
+});
+</script>
+{% endblock %}
