@@ -7,3 +7,4 @@ Authlib
 Flask-Login
 python-dotenv
 requests
+Flask-Cors
