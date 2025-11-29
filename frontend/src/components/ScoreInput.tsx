@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
 import api from '@/lib/api';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 
-import { PaperAirplaneIcon, MicrophoneIcon, CalendarDaysIcon } from '@heroicons/react/24/solid'; // Add CalendarDaysIcon
+import { CalendarDaysIcon, MicrophoneIcon, PaperAirplaneIcon } from '@heroicons/react/24/solid';
 
 // Define the interface for the SpeechRecognition API
 declare global {
@@ -16,15 +16,15 @@ declare global {
 
 const ScoreInput = () => {
   const [memo, setMemo] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]); // Add date state
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [isListening, setIsListening] = useState(false); // Add isListening state
+  const [isListening, setIsListening] = useState(false);
   
-  const recognition = useRef<any>(null); // Add recognition ref
+  const recognition = useRef<any>(null);
 
-  useEffect(() => { // Re-add useEffect for SpeechRecognition setup
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (SpeechRecognition) {
@@ -47,7 +47,7 @@ const ScoreInput = () => {
     }
   }, []);
 
-  const handleVoiceInput = () => { // Re-add handleVoiceInput function
+  const handleVoiceInput = () => {
     if (recognition.current && !isListening) {
       recognition.current.start();
       setIsListening(true);
@@ -64,23 +64,21 @@ const ScoreInput = () => {
     setSuccess(null);
 
     try {
-      // Step 1: Get AI evaluation
       setSuccess('AIが評価を計算しています。');
       const evaluateResponse = await api.post('/evaluate', { text: memo });
       const { score, comment } = evaluateResponse.data;
 
       const finalNote = `${memo}\n\n[AIコメント]：${comment}`;
 
-      // Step 2: Save the entry with the AI's score and selected date
       setSuccess('評価を保存しています。');
       await api.post('/entry', {
         score: score,
         note: finalNote,
-        date: date, // Use selected date
+        date: date,
       });
 
       setSuccess(`記録が保存されました！（日付：${date}、スコア：${score}）`);
-      setMemo(finalNote); // Update memo with AI comment
+      setMemo(finalNote);
 
     } catch (err: any) {
       if (err.response && err.response.data.error?.includes('UNIQUE constraint failed')) {
@@ -102,39 +100,41 @@ const ScoreInput = () => {
       {error && <p className="text-red-400 bg-red-900/50 p-3 rounded-md mb-4">{error}</p>}
       {success && <p className="text-green-400 bg-green-900/50 p-3 rounded-md mb-4">{success}</p>}
       
-      <div className="space-y-8"> {/* Increased spacing */}
+      <div className="space-y-8">
         <div>
-          <label htmlFor="date" className="block text-base font-medium text-gray-300 mb-1"> {/* Increased font size */}
+          <label htmlFor="date" className="block text-base font-medium text-gray-300 mb-1">
             日付
           </label>
-          <div className="relative">
+          <label htmlFor="date" className="relative block cursor-pointer">
             <input
               type="date"
               id="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="mt-1 block w-full bg-gray-900 border-gray-600 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-base p-3 appearance-none pr-10 cursor-pointer" // Increased font size and padding
+              // ▼ 変更点1: onClickでピッカーを強制表示
+              onClick={(e) => e.currentTarget.showPicker()} 
+              // ▼ 変更点2: [&::-webkit-calendar-picker-indicator]:hidden を追加してブラウザ標準アイコンを消す
+              className="mt-1 block w-full bg-gray-900 border-gray-600 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-base p-3 appearance-none pr-12 cursor-pointer" // Added cursor-pointer
               disabled={isLoading || (success != null && !error)}
             />
-            <CalendarDaysIcon className="absolute right-3 top-1/2 -translate-y-1/2 h-6 w-6 text-gray-400 pointer-events-none" /> {/* Increased icon size */}
-          </div>
+            <CalendarDaysIcon className="absolute right-3 top-1/2 -translate-y-1/2 h-8 w-8 text-teal-400" />
+          </label>
         </div>
 
         <div>
-          <label htmlFor="memo" className="block text-base font-medium text-gray-300 mb-1"> {/* Increased font size */}
+          <label htmlFor="memo" className="block text-base font-medium text-gray-300 mb-1">
             活動内容
           </label>
-          <div className="relative"> {/* Added relative for positioning */}
+          <div className="relative">
             <textarea
               id="memo"
               rows={8}
               value={memo}
               onChange={(e) => setMemo(e.target.value)}
-              className="mt-1 block w-full bg-gray-900 border-gray-600 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-base p-3" // Increased font size and padding
+              className="mt-1 block w-full bg-gray-900 border-gray-600 rounded-md shadow-sm focus:ring-teal-500 focus:border-teal-500 text-base p-3"
               placeholder="集中して取り組んだこと、達成したタスクなどを具体的に入力してください。"
               disabled={isLoading || (success != null && !error)}
             />
-            {/* Microphone Button */}
             <button
               type="button"
               onClick={handleVoiceInput}
@@ -142,12 +142,12 @@ const ScoreInput = () => {
               className={`absolute bottom-3 right-3 p-2 rounded-full cursor-pointer ${isListening ? 'bg-red-500 animate-pulse' : 'bg-teal-600 hover:bg-teal-700'} disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors`}
               title="音声メモを録音"
             >
-              <MicrophoneIcon className="h-6 w-6 text-white" /> {/* Increased icon size */}
+              <MicrophoneIcon className="h-6 w-6 text-white" />
             </button>
           </div>
         </div>
         
-        <div className="flex justify-center pt-2"> {/* Added padding-top */}
+        <div className="flex justify-center pt-2">
           <button
             type="button"
             onClick={handleEvaluateAndSave}
