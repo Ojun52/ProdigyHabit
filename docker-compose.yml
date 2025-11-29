@@ -1,26 +1,30 @@
 services:
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    volumes:
+      # Mount source code for hot-reloading
+      - ./frontend:/app
+      # Use a named volume for node_modules to avoid overwriting
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+
   backend:
     build:
       context: ./backend
-      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      # Mount source code for hot-reloading
+      - ./backend:/app
     ports:
       - "5000:5000"
-    volumes:
-      - ./backend:/app # Mount the backend directory for hot-reloading
     env_file:
       - .env
     depends_on:
       db:
         condition: service_healthy
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
 
   db:
     image: postgres:14-alpine
@@ -32,6 +36,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s

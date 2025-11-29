@@ -1,43 +1,33 @@
-# === Stage 1: Build ===
-FROM node:20-alpine AS builder
-
-# Set the working directory
+# === 1. Base Stage: Common dependencies ===
+FROM node:18-alpine AS base
 WORKDIR /app
-
-# Copy dependency files
+# Copy package files to leverage Docker cache
 COPY package*.json ./
 
-# Install all dependencies (including devDependencies for building)
-RUN npm ci
+# === 2. Dev Stage: For local development ===
+FROM base AS dev
+# Install all dependencies, including devDependencies
+RUN npm install
+# Set the default command for development
+CMD ["npm", "run", "dev"]
 
-# Copy the rest of the source code
+# === 3. Builder Stage: For creating the production build ===
+FROM base AS builder
+# Install all dependencies needed for the build
+RUN npm install
+# Copy all source files
 COPY . .
-
-# Build the Next.js application for production
+# Run the build script
 RUN npm run build
 
-# === Stage 2: Production ===
-FROM node:20-alpine
-
+# === 4. Prod Stage: For running in production ===
+FROM node:18-alpine AS prod
 WORKDIR /app
-
-# Create a non-root user for security
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
-# Copy production-necessary files from the builder stage
+# Copy only the necessary artifacts from the builder stage
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
-
-# Change ownership of the app directory
-RUN chown -R appuser:appgroup /app
-
-# Switch to the non-root user
-USER appuser
-
-# Expose the port the app runs on
+# Expose the port and set the start command
 EXPOSE 3000
-
-# The command to start the production server
 CMD ["npm", "start"]
