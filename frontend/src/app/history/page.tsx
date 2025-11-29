@@ -128,7 +128,7 @@ export default function HistoryPage() {
                     </p>
                   </>
                 ) : (
-                  <p className="text-gray-500 italic">記録がありません</p>
+                  <p className="text-gray-500 italic">記録がありません。</p>
                 )}
               </div>
             </div>

@@ -39,11 +39,10 @@ const Navbar = () => {
       await api.post('/logout');
       setIsLoggedIn(false);
       window.location.href = '/'; // Redirect to home to reflect logout state
-    } catch (error) {
-      console.error('Logout failed:', error);
-    }
-  };
-  
+          } catch (error) {
+          console.error('ログアウトに失敗しました。', error);
+        }
+      };  
   const navLinks = [
     { href: '/', text: 'ホーム', icon: HomeIcon },
     { href: '/entry', text: '今日の記録', icon: PencilSquareIcon },

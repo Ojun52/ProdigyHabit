@@ -21,7 +21,7 @@ export default function FeedbackPage() {
         } else {
           setError('フィードバックの生成に失敗しました。');
         }
-        console.error(err);
+        console.error('API呼び出し中にエラーが発生しました。', err);
       } finally {
         setIsLoading(false);
       }

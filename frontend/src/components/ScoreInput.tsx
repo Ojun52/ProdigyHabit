@@ -36,7 +36,7 @@ const ScoreInput = () => {
           setIsListening(false);
         };
         recognition.current.onerror = (event: any) => {
-          console.error('Speech recognition error', event.error);
+          console.error('音声認識エラー。', error);
           setError('音声認識に失敗しました。');
           setIsListening(false);
         };
@@ -65,21 +65,21 @@ const ScoreInput = () => {
 
     try {
       // Step 1: Get AI evaluation
-      setSuccess('AIが評価を計算しています...');
+      setSuccess('AIが評価を計算しています。');
       const evaluateResponse = await api.post('/evaluate', { text: memo });
       const { score, comment } = evaluateResponse.data;
 
-      const finalNote = `${memo}\n\n[AIコメント]: ${comment}`;
+      const finalNote = `${memo}\n\n[AIコメント]：${comment}`;
 
       // Step 2: Save the entry with the AI's score and selected date
-      setSuccess('評価を保存しています...');
+      setSuccess('評価を保存しています。');
       await api.post('/entry', {
         score: score,
         note: finalNote,
         date: date, // Use selected date
       });
 
-      setSuccess(`記録が保存されました！ (日付: ${date}, スコア: ${score})`);
+      setSuccess(`記録が保存されました！（日付：${date}、スコア：${score}）`);
       setMemo(finalNote); // Update memo with AI comment
 
     } catch (err: any) {
@@ -88,7 +88,7 @@ const ScoreInput = () => {
       } else {
         setError('処理中にエラーが発生しました。');
       }
-      console.error(err);
+      console.error('API呼び出し中にエラーが発生しました。', err);
       setSuccess(null);
     } finally {
       setIsLoading(false);

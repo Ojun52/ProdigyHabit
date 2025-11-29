@@ -36,7 +36,7 @@ export default function IndexPage() {
     return (
       <div className="text-center bg-gray-800 p-8 rounded-lg shadow-xl">
         <h1 className="text-3xl font-bold text-teal-300">
-          おかえりなさい, {user.name}さん!
+          おかえりなさい、{user.name}さん！
         </h1>
         <p className="mt-4 text-lg text-gray-300">今日の生産性を記録して、一歩を踏み出しましょう。</p>
         <Link href="/entry" className="mt-6 inline-block px-8 py-3 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg shadow-lg transition-colors transform hover:scale-105 cursor-pointer">

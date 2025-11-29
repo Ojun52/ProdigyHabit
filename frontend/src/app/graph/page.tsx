@@ -29,7 +29,7 @@ export default function GraphPage() {
         } else {
           setError('データの読み込みに失敗しました。');
         }
-        console.error(err);
+        console.error('API呼び出し中にエラーが発生しました。', err);
       } finally {
         setIsLoading(false);
       }
@@ -38,13 +38,8 @@ export default function GraphPage() {
     fetchHistory();
   }, []);
 
-  if (isLoading) {
-    return <p className="text-center">グラフを読み込み中...</p>;
-  }
-
-  if (error) {
-    return <p className="text-center text-red-400">{error}</p>;
-  }
+  if (isLoading) return <p className="text-center">グラフを読み込み中...</p>;
+  if (error) return <p className="text-center text-red-400">{error}</p>;
 
   return (
     <div className="max-w-4xl mx-auto">
