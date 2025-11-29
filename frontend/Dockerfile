@@ -1,5 +1,5 @@
 # === 1. Base Stage: Common dependencies ===
-FROM node:18-alpine AS base
+FROM node:25-alpine AS base
 WORKDIR /app
 # Copy package files to leverage Docker cache
 COPY package*.json ./
@@ -21,7 +21,7 @@ COPY . .
 RUN npm run build
 
 # === 4. Prod Stage: For running in production ===
-FROM node:18-alpine AS prod
+FROM node:25-alpine AS prod
 WORKDIR /app
 # Copy only the necessary artifacts from the builder stage
 COPY --from=builder /app/public ./public

@@ -3,18 +3,28 @@ import json
 import logging
 import os
 import time
+import re
 
 import google.generativeai as genai
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, request, session, url_for
+from flask import Flask, jsonify, redirect, request, url_for, session
 from flask_cors import CORS
-from flask_login import (LoginManager, UserMixin, current_user, login_required,
-                         login_user, logout_user)
+from flask_login import (
+    LoginManager,
+    UserMixin,
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
 from flask_sqlalchemy import SQLAlchemy
 
 # --- Load Environment Variables ---
 load_dotenv()
+
+# --- App Initialization ---
+app = Flask(__name__)
 
 # --- Configuration ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -27,102 +37,47 @@ else:
     DB_HOST = os.getenv("DB_HOST", "db")
     SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
 
-GEMINI_API_KEY = os.getenv('GOOGLE_API_KEY')
-if not GEMINI_API_KEY:
-    raise ValueError("No GOOGLE_API_KEY set for Flask application")
-
-
-def sanitize_for_prompt(text: str) -> str:
-    """
-    A simple sanitizer to mitigate prompt injection.
-    This is a basic implementation and should be expanded for production.
-    It removes keywords that might be used to alter AI instructions.
-    """
-    if not text:
-        return ""
-    # Remove words like 'ignore', 'instruction', 'system', etc. case-insensitively
-    bad_keywords = ['ignore', 'instruction', 'system',
-                    'context', 'prompt', 'forget', 'override']
-    for keyword in bad_keywords:
-        text = text.replace(keyword, "")
-    # Add more sanitization rules here if needed
-    return text
-
-
-# --- App Initialization ---
-app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.json.ensure_ascii = False
-app.secret_key = os.getenv("FLASK_APP_SECRET_KEY")
-if not app.secret_key:
-    raise ValueError("No FLASK_APP_SECRET_KEY set for Flask application")
+app.secret_key = os.getenv("FLASK_APP_SECRET_KEY", "dev-secret-key")
 
 # --- CORS Configuration ---
-# Allow credentials (cookies) from the frontend origin.
-# Use an environment variable for production flexibility.
 CORS_ORIGIN = os.getenv("CORS_ORIGIN", "http://localhost:3000")
-CORS(app, resources={r"/api/*": {"origins": CORS_ORIGIN}},
-     supports_credentials=True)
-
+CORS(app, origins=CORS_ORIGIN, supports_credentials=True)
 
 # --- Database and Extensions ---
 db = SQLAlchemy(app)
 oauth = OAuth(app)
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
+genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 
 # --- User Authentication (Flask-Login) ---
 login_manager = LoginManager()
 login_manager.init_app(app)
 
-
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-
 @login_manager.unauthorized_handler
 def unauthorized():
-    # Return a 401 Unauthorized response for API requests
     return jsonify({"error": "User not authenticated"}), 401
 
-# --- Database Models ---
-
-
+# --- Database Models (Refactored) ---
 class User(UserMixin, db.Model):
+    __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     google_id = db.Column(db.String(128), unique=True, nullable=False)
     email = db.Column(db.String(128), unique=True, nullable=False)
     name = db.Column(db.String(128), nullable=True)
-    logs = db.relationship('DailyLog', backref='user', lazy=True)
+    activity_logs = db.relationship('ActivityLog', backref='user', lazy=True)
 
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "email": self.email
-        }
-
-
-class DailyLog(db.Model):
+class ActivityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    date = db.Column(db.Date, nullable=False, default=datetime.date.today)
-    score = db.Column(db.Integer, nullable=False)
-    note = db.Column(db.Text, nullable=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-
-    __table_args__ = (db.UniqueConstraint(
-        'date', 'user_id', name='_date_user_uc'),)
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "date": self.date.isoformat(),
-            "score": self.score,
-            "note": self.note
-        }
-
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
+    log_type = db.Column(db.String, nullable=False)
+    data = db.Column(db.JSON, nullable=False)
 
 # --- Google OAuth Configuration ---
 google = oauth.register(
@@ -140,16 +95,11 @@ google = oauth.register(
 )
 
 # --- Authentication Routes ---
-# The frontend will link to this to initiate login
-
-
 @app.route('/api/login')
 def login():
     redirect_uri = url_for('auth_callback', _external=True)
-    # Store the final frontend redirect URL in the session
     session['next_url'] = request.args.get('next') or 'http://localhost:3000/'
     return google.authorize_redirect(redirect_uri)
-
 
 @app.route('/api/auth/callback')
 def auth_callback():
@@ -160,198 +110,248 @@ def auth_callback():
         logging.error(f"Error during OAuth callback: {e}")
         return redirect(f"http://localhost:3000/login?error=true")
 
-    google_id = user_info['id']
-    email = user_info['email']
-    name = user_info.get('name')
-
-    user = User.query.filter_by(google_id=google_id).first()
+    user = User.query.filter_by(google_id=user_info['id']).first()
     if not user:
-        user = User(google_id=google_id, email=email, name=name)
+        user = User(google_id=user_info['id'], email=user_info['email'], name=user_info.get('name'))
         db.session.add(user)
         db.session.commit()
-
     login_user(user)
-    # Redirect back to the frontend
     next_url = session.pop('next_url', 'http://localhost:3000/')
     return redirect(next_url)
 
-
-# The frontend will call this to log the user out
 @app.route('/api/logout', methods=['POST'])
 @login_required
 def logout():
     logout_user()
     return jsonify({"success": True, "message": "Logged out successfully"})
 
-# --- API Endpoints ---
-
-
-@app.route('/api/me', methods=['GET'])
+@app.route('/api/dashboard', methods=['GET'])
 @login_required
-def get_me():
-    """Returns the currently logged-in user's information."""
-    return jsonify(current_user.to_dict())
+def get_dashboard_data():
+    """Fetches recent log data for the main dashboard."""
+    seven_days_ago = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+    
+    logs = ActivityLog.query.filter(
+        ActivityLog.user_id == current_user.id,
+        ActivityLog.created_at >= seven_days_ago
+    ).order_by(ActivityLog.created_at.asc()).all()
+    
+    # Process data for charting
+    chart_data = [
+        {
+            "date": log.created_at.strftime('%Y-%m-%d'),
+            # Use .get() for safe access to potentially missing keys in the JSON
+            "score": log.data.get('score') if log.log_type == 'focus' else None,
+            "sleep": log.data.get('sleep_hours') if log.log_type == 'life' else None,
+        } for log in logs
+    ]
 
+    # Further processing to combine data for the same day if needed
+    processed_data = {}
+    for item in chart_data:
+        date = item['date']
+        if date not in processed_data:
+            processed_data[date] = {'date': date}
+        if item['score'] is not None:
+            processed_data[date]['score'] = item['score']
+        if item['sleep'] is not None:
+            processed_data[date]['sleep'] = item['sleep']
+
+    final_chart_data = list(processed_data.values())
+
+    return jsonify({"chart_data": final_chart_data})
+
+@app.route('/api/chat/focus', methods=['POST', 'OPTIONS'])
+@login_required
+def focus_chat():
+    """Handles the conversational AI logic for focus session reporting."""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
+    data = request.get_json()
+    message = data.get('message')
+    history = data.get('history', [])
+    known_duration = data.get('known_duration') # Optional pre-filled duration
+
+    if not message:
+        return jsonify({'error': 'Message is required'}), 400
+
+    # Base prompt
+    system_prompt = """あなたは、ユーザーの成果報告を聞き出す、親しみやすい専属コーチです。
+会話履歴：
+{chat_history}
+ユーザーの最新のメッセージ：
+「{user_message}」
+"""
+
+    # Dynamically change the instructions based on what information is already known
+    if known_duration:
+        system_prompt += f"""
+あなたの目的は、ユーザーから**「タスク内容 (task_content)」**を聞き出すことです。
+集中時間 ({known_duration}分) は既にわかっています。
+タスク内容が不明な場合は、質問してください。
+タスク内容が揃ったら、労いの言葉と共に、必ず文末に以下の形式で隠しデータを出力してください:
+`JSON_DATA: {{"task_content": "...", "duration_minutes": {known_duration}}}`
+"""
+    else:
+        system_prompt += """
+あなたの目的は、ユーザーから**「タスク内容 (task_content)」と「集中時間 (duration_minutes)」**の2つを聞き出すことです。
+情報が足りなければ質問してください。
+情報が揃ったら、労いの言葉と共に、必ず文末に以下の形式で隠しデータを出力してください:
+`JSON_DATA: {{"task_content": "...", "duration_minutes": ...}}`
+"""
+    
+    system_prompt += "\nあなたの応答："
+    
+    # Format chat history for the prompt
+    formatted_history = "\n".join([f"{msg['sender']}: {msg['text']}" for msg in history])
+    
+    prompt = system_prompt.format(chat_history=formatted_history, user_message=message)
+
+    try:
+        text_model = genai.GenerativeModel('gemini-2.5-flash')
+        response = text_model.generate_content(prompt)
+        
+        return jsonify({'reply': response.text})
+
+    except Exception as e:
+        logging.error(f"Error during focus chat for user {current_user.id}: {e}")
+        return jsonify({'error': 'AI is currently unavailable.'}), 500
+
+
+# --- Refactored API Endpoints ---
+@app.route('/api/activity/log', methods=['POST', 'OPTIONS'])
+@login_required
+def save_activity_log():
+    """Saves a new activity log, handling AI scoring for focus logs."""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+        
+    data = request.get_json()
+    log_type = data.get('log_type')
+    log_data = data.get('data')
+
+    if not log_type or not log_data or log_type not in ['focus', 'life']:
+        return jsonify({'error': 'Invalid log data provided'}), 400
+
+    try:
+        if log_type == 'focus':
+            # For focus logs, call AI to get score and feedback
+            task_content = log_data.get('task_content')
+            duration = log_data.get('duration_minutes')
+            if not task_content or duration is None:
+                return jsonify({'error': 'Missing task_content or duration_minutes for focus log'}), 400
+
+            prompt = f"""ユーザーの成果報告を評価し、生産性スコア（仕事点）を0〜100点で採点し、簡潔なフィードバックを日本語で生成してください。
+成果報告: 「{task_content}」
+作業時間: {duration}分
+出力は必ず以下のJSON形式とします。
+{{"score": integer, "ai_feedback": "string"}}
+"""
+            try:
+                json_model = genai.GenerativeModel(
+                    'gemini-2.5-flash',
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                response = json_model.generate_content(prompt)
+                ai_results = json.loads(response.text)
+                
+                # Add AI results to the data to be saved
+                log_data['score'] = ai_results.get('score')
+                log_data['ai_feedback'] = ai_results.get('ai_feedback')
+
+            except Exception as ai_e:
+                logging.error(f"AI scoring failed for user {current_user.id}: {ai_e}")
+                # If AI fails, save with placeholder data
+                log_data['score'] = 0
+                log_data['ai_feedback'] = "AIによる評価に失敗しました。"
+
+        # For 'life' logs, data is saved as is
+        new_log = ActivityLog(
+            user_id=current_user.id,
+            log_type=log_type,
+            data=log_data
+        )
+        db.session.add(new_log)
+        db.session.commit()
+        return jsonify({'message': 'Activity log saved successfully', 'log_id': new_log.id}), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        logging.error(f"Error saving activity log for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
 
 @app.route('/api/history', methods=['GET'])
 @login_required
 def get_history():
-    """Returns all logs for the current user."""
     try:
-        logs = DailyLog.query.filter(
-            DailyLog.user_id == current_user.id
-        ).order_by(DailyLog.date.desc()).all()
-        return jsonify([log.to_dict() for log in logs])
+        logs = ActivityLog.query.filter_by(user_id=current_user.id).order_by(ActivityLog.created_at.desc()).all()
+        result = [
+            {
+                "id": log.id,
+                "user_id": log.user_id,
+                "created_at": log.created_at.isoformat(),
+                "log_type": log.log_type,
+                "data": log.data
+            } for log in logs
+        ]
+        return jsonify(result)
     except Exception as e:
-        logging.error(
-            f"Error fetching history for user {current_user.id}: {e}")
+        logging.error(f"Error fetching history for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
 
-
-@app.route('/api/entry', methods=['POST'])
-@login_required
-def create_or_update_entry():
-    """Creates a new log or updates an existing one for a given date."""
-    data = request.get_json()
-    if not data or 'score' not in data:
-        return jsonify({'error': 'Missing data. "score" is required.'}), 400
-
-    try:
-        # Use today's date if not provided
-        date_str = data.get('date', datetime.date.today().isoformat())
-        log_date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
-
-        log = DailyLog.query.filter_by(
-            date=log_date, user_id=current_user.id).first()
-
-        if log:  # Update existing log
-            log.score = data['score']
-            # Keep old note if new one is empty
-            log.note = data.get('note', log.note)
-        else:  # Create new log
-            log = DailyLog(
-                date=log_date,
-                score=data['score'],
-                note=data.get('note', ''),
-                user_id=current_user.id
-            )
-            db.session.add(log)
-
-        db.session.commit()
-        return jsonify(log.to_dict()), 201
-    except Exception as e:
-        db.session.rollback()
-        logging.error(f"Error saving entry for user {current_user.id}: {e}")
-        return jsonify({'error': 'An internal server error occurred.'}), 500
-
-
-@app.route('/api/evaluate', methods=['POST'])
-@login_required
-def evaluate_log_text():
-    """Receives text and returns an AI-generated score and comment."""
-    data = request.get_json()
-    log_text = data.get('text')
-
-    if not log_text:
-        return jsonify({'error': 'Missing "text" in request body'}), 400
-
-    sanitized_log_text = sanitize_for_prompt(log_text)
-
-    try:
-        system_instruction = """
-あなたは公正で客観的な生産性コーチです。
-ユーザーの活動ログに基づき、0〜100点のスコアと、100文字以内の簡潔なフィードバックを日本語で出力してください。
-採点基準:
-* 90-100点 (卓越): ディープワーク（深い集中）、高難易度タスクの完了、新しいスキルの習得。
-* 70-89点 (良): 予定通りのタスク消化、ルーティンワークの遂行、適切な休憩。
-* 50-69点 (可): 多少の進捗はあるが、非効率や集中切れが目立つ。
-* 0-49点 (不可): 明らかな怠惰、先延ばし、無意味な時間の浪費。
-出力形式: 以下のJSONスキーマに従うこと。
-{"score": integer, "comment": string}
-"""
-        json_model = genai.GenerativeModel(
-            'gemini-2.5-flash',
-            generation_config={"response_mime_type": "application/json"}
-        )
-        prompt = f"{system_instruction}\n\n活動ログ:\n'''\n{sanitized_log_text}\n'''"
-        response = json_model.generate_content(prompt)
-        evaluation = json.loads(response.text)
-        return jsonify(evaluation)
-
-    except Exception as e:
-        logging.error(
-            f"Error during AI evaluation for user {current_user.id}: {e}")
-        return jsonify({'error': 'AI evaluation failed.'}), 500
-
-
-@app.route('/api/feedback', methods=['GET'])
+@app.route('/api/feedback', methods=['GET', 'OPTIONS'])
 @login_required
 def get_feedback():
-    """Generates AI feedback based on the last 7 days of logs."""
+    """Generates holistic AI feedback based on recent activity logs."""
+    if request.method == 'OPTIONS':
+        return jsonify({'status': 'ok'}), 200
+
     try:
-        seven_days_ago = datetime.date.today() - datetime.timedelta(days=6)
-        logs = DailyLog.query.filter(
-            DailyLog.user_id == current_user.id,
-            DailyLog.date >= seven_days_ago
-        ).order_by(DailyLog.date.desc()).all()
+        seven_days_ago = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+        logs = ActivityLog.query.filter(
+            ActivityLog.user_id == current_user.id,
+            ActivityLog.created_at >= seven_days_ago
+        ).order_by(ActivityLog.created_at.asc()).all()
 
         if len(logs) < 2:
             return jsonify({'feedback': 'フィードバックを生成するには、少なくとも2日以上の記録が必要です。'})
 
-        log_data = [log.to_dict() for log in logs]
+        # Create a simplified summary for the AI prompt
+        log_summary = []
+        for log in logs:
+            entry = f"- Date: {log.created_at.strftime('%Y-%m-%d')}, Type: {log.log_type}, Data: {json.dumps(log.data)}"
+            log_summary.append(entry)
+        
+        summary_text = "\n".join(log_summary)
 
-        prompt_template = f"""
-あなたは、生産性向上のためのコーチングAIです。
-以下のJSONデータは、ユーザーの過去数日間の生産性ログです。
-- 'date': 日付
-- 'score': 100点満点の生産性スコア
-- 'note': その日の行動に関するメモ
+        prompt = f"""あなたは、生産性向上のための優れたコーチングAIです。
+以下のJSON形式のデータは、ユーザーの過去数日間の仕事(focus)と生活(life)のログです。
 
 --- データ ---
-{json.dumps(log_data, indent=2, ensure_ascii=False)}
+{summary_text}
 --- データ ---
 
-上記のデータに基づき、以下の2点について、簡潔かつ激励的なフィードバックを日本語で生成してください。
+上記のデータに基づき、仕事と生活の**相関関係を分析**し、以下の2点について具体的で、ユーザーを励ますようなフィードバックを日本語で生成してください。
 
-1. **総括**: ユーザーの生産性トレンドを3文以内で要約してください。良いところと改善点の両方に触れてください。
-2. **ワンポイントアドバイス**: 生産性をさらに向上させるための、最も効果的で具体的な行動を2つ提案してください。
-
-注意: 行動を提案するときは、ユーザーの過去のメモを参考にし、同じ行動を繰り返すのではなく、新しい視点や方法を提供してください。
-また、具体的な行動を提示してください。精神論ではなく、ウィルパワーがない人でも「仕組み化」して実行できるような内容にしてください。
+1. **総括**: ユーザーの生産性と生活のバランスについて、良い点と改善点を3文以内で要約してください。（例：「集中して作業できていますが、睡眠時間が短い傾向があり、パフォーマンスに影響しているかもしれません。」）
+2. **ワンポイントアドバイス**: 生産性とウェルビーイングを両立させるための、最も効果的で具体的な行動を2つ提案してください。精神論ではなく、すぐに実践できる仕組みや工夫を提案してください。
 """
-        # Use the non-JSON model for this
         text_model = genai.GenerativeModel('gemini-2.5-flash')
-        response = text_model.generate_content(prompt_template)
+        response = text_model.generate_content(prompt)
+        
         return jsonify({'feedback': response.text})
 
     except Exception as e:
-        logging.error(
-            f"Error generating feedback for user {current_user.id}: {e}")
+        logging.error(f"Error generating feedback for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
-
 
 # --- App Initialization Command ---
 @app.cli.command("init-db")
 def init_db_command():
     """Initializes the database by creating all tables."""
-    retries = 5
-    delay = 5
-    for i in range(retries):
-        try:
-            db.create_all()
-            print("Database initialized successfully.")
-            return
-        except Exception as e:
-            print(f"Database connection failed: {e}")
-            if i < retries - 1:
-                print(f"Retrying in {delay} seconds...")
-                time.sleep(delay)
-            else:
-                print("Could not connect to the database after several retries.")
-                raise
-
+    db.create_all()
+    print("Database initialized successfully.")
 
 if __name__ == '__main__':
-    # Note: This is for local development without Docker.
-    # The Docker container will use a Gunicorn server.
     app.run(host='0.0.0.0', port=5000, debug=True)

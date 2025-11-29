@@ -7,13 +7,13 @@ import {
   Bars3Icon, 
   XMarkIcon,
   HomeIcon,
-  PencilSquareIcon,
   ClockIcon,
   ChartBarIcon,
   ChatBubbleLeftRightIcon,
   ArrowRightOnRectangleIcon,
   ArrowLeftOnRectangleIcon,
 } from '@heroicons/react/24/solid';
+import { BrainCircuit, Sofa } from 'lucide-react';
 
 const Navbar = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -23,7 +23,7 @@ const Navbar = () => {
   useEffect(() => {
     const checkAuthStatus = async () => {
       try {
-        await api.get('/me');
+        await api.get('/dashboard'); // Use the dashboard endpoint to check auth
         setIsLoggedIn(true);
       } catch (error) {
         setIsLoggedIn(false);
@@ -45,7 +45,8 @@ const Navbar = () => {
       };  
   const navLinks = [
     { href: '/', text: 'ホーム', icon: HomeIcon },
-    { href: '/entry', text: '今日の記録', icon: PencilSquareIcon },
+    { href: '/focus', text: '執務室', icon: BrainCircuit },
+    { href: '/lounge', text: 'ラウンジ', icon: Sofa },
     { href: '/history', text: '履歴', icon: ClockIcon },
     { href: '/graph', text: 'グラフ', icon: ChartBarIcon },
     { href: '/feedback', text: 'フィードバック', icon: ChatBubbleLeftRightIcon },
