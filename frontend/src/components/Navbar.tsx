@@ -14,7 +14,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import AnimatedHamburgerButton from './AnimatedHamburgerButton'; // Import the new component
 
-const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 const Navbar = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -75,7 +75,7 @@ const Navbar = () => {
                   ログアウト
                 </button>
               ) : (
-                <a href={`${BACKEND_API_BASE_URL}/api/login`} className="flex items-center gap-2 text-gray-100 hover:text-teal-300 transition-colors cursor-pointer">
+                <a href={`${BACKEND_API_URL}/login`} className="flex items-center gap-2 text-gray-100 hover:text-teal-300 transition-colors cursor-pointer">
                   <ArrowRightOnRectangleIcon className="h-5 w-5" />
                   ログイン
                 </a>
@@ -125,7 +125,7 @@ const Navbar = () => {
                     ログアウト
                   </button>
                 ) : (
-                  <a href={`${BACKEND_API_BASE_URL}/api/login`} className="flex items-center gap-3 text-gray-100 hover:text-teal-300 transition-colors cursor-pointer">
+                  <a href={`${BACKEND_API_URL}/login`} className="flex items-center gap-3 text-gray-100 hover:text-teal-300 transition-colors cursor-pointer">
                     <ArrowRightOnRectangleIcon className="h-6 w-6" />
                     ログイン
                   </a>
