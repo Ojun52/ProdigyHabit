@@ -15,9 +15,8 @@ from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
 from flask_migrate import Migrate  # Import Flask-Migrate
 from flask_sqlalchemy import SQLAlchemy
-
-from models import (ActivityLog,  # Import db and models from models.py
-                     AiUsageLog, User, db)
+from models import ActivityLog  # Import db and models from models.py
+from models import AiUsageLog, User, db
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -38,6 +37,8 @@ else:
 
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # 異なるドメイン間での送信を許可
+app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS必須（本番は必須）
 app.json.ensure_ascii = False
 app.secret_key = os.getenv("FLASK_APP_SECRET_KEY", "dev-secret-key")
 
@@ -46,21 +47,25 @@ CORS_ORIGIN = os.getenv("CORS_ORIGIN", "http://localhost:3000")
 CORS(app, origins=CORS_ORIGIN, supports_credentials=True)
 
 # --- URL Validation Helper ---
+
+
 def is_safe_url(target):
     """
     Check if a URL is safe for redirection.
     """
     # Whitelisted domains
     frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
-    allowed_hosts = [urlparse(frontend_url).netloc, 'localhost:3000', 'localhost:5000']
-    
+    allowed_hosts = [urlparse(frontend_url).netloc,
+                     'localhost:3000', 'localhost:5000']
+
     # Parse the target URL
     try:
         target_netloc = urlparse(target).netloc
         return target_netloc in allowed_hosts
     except Exception:
         return False
-        
+
+
 # --- Database and Extensions ---
 db.init_app(app)  # Initialize db with the Flask app
 migrate = Migrate(app, db)  # Initialize Flask-Migrate
@@ -106,8 +111,10 @@ google = oauth.register(
 @app.route('/api/login')
 def login():
     # Prioritize environment variable, otherwise generate URL with HTTPS scheme for proxy compatibility
-    redirect_uri = os.getenv('GOOGLE_REDIRECT_URI') or url_for('auth_callback', _external=True, _scheme='https')
-    session['next_url'] = request.args.get('next') or os.getenv('FRONTEND_URL') or 'http://localhost:3000/'
+    redirect_uri = os.getenv('GOOGLE_REDIRECT_URI') or url_for(
+        'auth_callback', _external=True, _scheme='https')
+    session['next_url'] = request.args.get('next') or os.getenv(
+        'FRONTEND_URL') or 'http://localhost:3000/'
     return google.authorize_redirect(redirect_uri, prompt='select_account')
 
 
@@ -127,13 +134,14 @@ def auth_callback():
         db.session.add(user)
         db.session.commit()
     login_user(user)
-    
+
     # --- Open Redirect Vulnerability Mitigation ---
-    next_url = session.pop('next_url', os.getenv('FRONTEND_URL') or 'http://localhost:3000/')
+    next_url = session.pop('next_url', os.getenv(
+        'FRONTEND_URL') or 'http://localhost:3000/')
     if not is_safe_url(next_url):
         # Fallback to a safe, default URL if the provided next_url is not in the whitelist
         next_url = os.getenv('FRONTEND_URL') or 'http://localhost:3000/'
-        
+
     return redirect(next_url)
 
 
@@ -233,15 +241,18 @@ def focus_chat():
         ).order_by(AiUsageLog.used_at.desc()).first()
 
         if last_focus_usage and (datetime.datetime.utcnow() - last_focus_usage.used_at).total_seconds() < 600:
-            remaining_seconds = int(600 - (datetime.datetime.utcnow() - last_focus_usage.used_at).total_seconds())
+            remaining_seconds = int(
+                600 - (datetime.datetime.utcnow() - last_focus_usage.used_at).total_seconds())
             return jsonify({"error": f"次の利用まであと{(remaining_seconds // 60) + 1}分です。", "cooldown": True, "remaining_cooldown_seconds": remaining_seconds}), 429
-        
+
         try:
-            db.session.add(AiUsageLog(user_id=current_user.id, feature_type='focus'))
+            db.session.add(AiUsageLog(
+                user_id=current_user.id, feature_type='focus'))
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            logging.error(f"Error saving initial AiUsageLog for focus_chat: {e}")
+            logging.error(
+                f"Error saving initial AiUsageLog for focus_chat: {e}")
             return jsonify({'error': 'サーバーエラーが発生しました。利用記録に失敗しました。'}), 500
 
     if not message:
@@ -256,11 +267,12 @@ def focus_chat():
         "情報が足りない場合は、質問を続けてください。"
         "注意: JSONのキーと文字列の値は必ずダブルクォート `\"` で囲ってください。"
     )
-    
-    formatted_history = "\n".join([f"{msg['sender']}: {msg['text']}" for msg in history])
-    if known_duration:
-         formatted_history = f"system: 集中時間は{known_duration}分です。\n" + formatted_history
 
+    formatted_history = "\n".join(
+        [f"{msg['sender']}: {msg['text']}" for msg in history])
+    if known_duration:
+        formatted_history = f"system: 集中時間は{known_duration}分です。\n" + \
+            formatted_history
 
     prompt = f"{system_instructions}\n\n--- Conversation History ---\n{formatted_history}\n\n--- User Message ---\n{message}\n\nあなたの応答:"
 
@@ -280,23 +292,26 @@ def focus_chat():
 
             # --- Scoring and Saving Logic (moved from save_activity_log) ---
             scoring_prompt = f"""ユーザーの成果報告を評価し、生産性スコア（0〜100点）を採点し、簡潔なフィードバックを日本語で生成してください。\n成果報告:「{task_content}」（作業時間: {duration}分）\n出力は必ず以下の有効なJSON形式とします。\n{{\"score\": integer, \"ai_feedback\": \"string\"}}"""
-            
+
             try:
-                json_model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+                json_model = genai.GenerativeModel(
+                    'gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
                 scoring_response = json_model.generate_content(scoring_prompt)
                 ai_results = json.loads(scoring_response.text)
-                
+
                 focus_log_data['score'] = ai_results.get('score')
                 focus_log_data['ai_feedback'] = ai_results.get('ai_feedback')
             except Exception as ai_e:
-                logging.error(f"AI scoring failed for user {current_user.id}: {ai_e}")
+                logging.error(
+                    f"AI scoring failed for user {current_user.id}: {ai_e}")
                 focus_log_data['score'] = 0
                 focus_log_data['ai_feedback'] = "AIによる評価に失敗しました。"
 
-            new_log = ActivityLog(user_id=current_user.id, log_type='focus', data=focus_log_data)
+            new_log = ActivityLog(user_id=current_user.id,
+                                  log_type='focus', data=focus_log_data)
             db.session.add(new_log)
             db.session.commit()
-            
+
             final_reply = f"{focus_log_data.get('ai_feedback')}\n\n（成果を記録しました。）"
             return jsonify({'reply': final_reply, 'focus_log_saved': True})
 
@@ -305,7 +320,8 @@ def focus_chat():
             return jsonify({'reply': ai_reply, 'focus_log_saved': False})
 
     except Exception as e:
-        logging.error(f"Error during focus chat for user {current_user.id}: {e}")
+        logging.error(
+            f"Error during focus chat for user {current_user.id}: {e}")
         return jsonify({'error': 'AIが現在利用できません。'}), 500
 
 
@@ -509,15 +525,17 @@ def lounge_chat():
                     "cooldown": True,
                     "remaining_cooldown_seconds": remaining_cooldown
                 }), 429
-        
+
         # Record AI usage at the beginning of the conversation
         try:
-            new_ai_usage = AiUsageLog(user_id=current_user.id, feature_type='lounge')
+            new_ai_usage = AiUsageLog(
+                user_id=current_user.id, feature_type='lounge')
             db.session.add(new_ai_usage)
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            logging.error(f"Error saving initial AiUsageLog for user {current_user.id}: {e}")
+            logging.error(
+                f"Error saving initial AiUsageLog for user {current_user.id}: {e}")
             return jsonify({'error': 'サーバーエラーが発生しました。利用記録に失敗しました。'}), 500
 
     if not message:
@@ -583,21 +601,24 @@ def lounge_chat():
         logging.warning(f"RAW AI REPLY (lounge_chat): {ai_reply}")
 
         # 3. 保存: JSONが検出されたら、ActivityLog に log_type='life' で保存する。
-        json_match = re.search(r'JSON_DATA:\s*`{3}json\n(\{.*\})\n`{3}', ai_reply, re.DOTALL | re.IGNORECASE)
+        json_match = re.search(
+            r'JSON_DATA:\s*`{3}json\n(\{.*\})\n`{3}', ai_reply, re.DOTALL | re.IGNORECASE)
         if not json_match:
             # Fallback for cases where AI might not use the markdown block
-            json_match = re.search(r'JSON_DATA:\s*(\{.*\})', ai_reply, re.DOTALL | re.IGNORECASE)
-        
+            json_match = re.search(
+                r'JSON_DATA:\s*(\{.*\})', ai_reply, re.DOTALL | re.IGNORECASE)
+
         if json_match:
             try:
                 json_data_str = json_match.group(1)
                 life_log_data = json.loads(json_data_str)
 
                 # Clean up the AI reply and add confirmation message
-                ai_reply_cleaned = ai_reply.replace(json_match.group(0), "").strip()
+                ai_reply_cleaned = ai_reply.replace(
+                    json_match.group(0), "").strip()
                 save_confirmation_message = "\n\n（生活ログを記録しました。）"
                 final_reply = ai_reply_cleaned + save_confirmation_message
-                
+
                 new_log = ActivityLog(
                     user_id=current_user.id,
                     log_type='life',
