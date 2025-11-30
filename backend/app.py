@@ -37,7 +37,6 @@ else:
 
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # 異なるドメイン間での送信を許可
 app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS必須（本番は必須）
 app.json.ensure_ascii = False
 app.secret_key = os.getenv("FLASK_APP_SECRET_KEY", "dev-secret-key")
@@ -298,23 +297,26 @@ def focus_chat():
 - 自己評価集中度: {focus_level}/5
 出力は必ず以下の有効なJSON形式とします。
 {{\"score\": integer, \"ai_feedback\": \"string\"}}"""
-            
+
             try:
-                json_model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+                json_model = genai.GenerativeModel(
+                    'gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
                 scoring_response = json_model.generate_content(scoring_prompt)
                 ai_results = json.loads(scoring_response.text)
-                
+
                 focus_log_data['score'] = ai_results.get('score')
                 focus_log_data['ai_feedback'] = ai_results.get('ai_feedback')
             except Exception as ai_e:
-                logging.error(f"AI scoring failed for user {current_user.id}: {ai_e}")
+                logging.error(
+                    f"AI scoring failed for user {current_user.id}: {ai_e}")
                 focus_log_data['score'] = 0
                 focus_log_data['ai_feedback'] = "AIによる評価に失敗しました。"
 
-            new_log = ActivityLog(user_id=current_user.id, log_type='focus', data=focus_log_data)
+            new_log = ActivityLog(user_id=current_user.id,
+                                  log_type='focus', data=focus_log_data)
             db.session.add(new_log)
             db.session.commit()
-            
+
             final_reply = f"{focus_log_data.get('ai_feedback')}\n\n（成果を記録しました。）"
             return jsonify({'reply': final_reply, 'focus_log_saved': True})
         except (json.JSONDecodeError, ValueError):
@@ -322,7 +324,8 @@ def focus_chat():
             return jsonify({'reply': ai_reply, 'focus_log_saved': False})
 
     except Exception as e:
-        logging.error(f"Error during focus chat for user {current_user.id}: {e}")
+        logging.error(
+            f"Error during focus chat for user {current_user.id}: {e}")
         return jsonify({'error': 'AIが現在利用できません。'}), 500
 
 
