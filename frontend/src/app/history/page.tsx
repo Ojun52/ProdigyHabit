@@ -19,7 +19,7 @@ const getWeekStart = (date: Date): Date => {
 // Helper component to render each type of log (reused)
 const LogItemContent = ({ log, onDelete }: { log: ActivityLog, onDelete: (id: number) => void }) => {
   const typeIcon = log.log_type === 'focus' ? <BrainCircuit className="h-4 w-4 text-indigo-400" /> : <Sofa className="h-4 w-4 text-green-400" />;
-  const logTime = new Date(log.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const logTime = new Date(log.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
 
 
   return (
@@ -172,7 +172,7 @@ export default function HistoryPage() {
             <ChevronLeftIcon className="h-6 w-6" />
           </button>
           <span className="text-lg font-semibold">
-            {startOfWeekDisplay.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' })} - {endOfWeekDisplay.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' })}
+            {startOfWeekDisplay.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo' })} - {endOfWeekDisplay.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo' })}
           </span>
           <button onClick={() => changeWeek('next')} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600 transition-colors cursor-pointer">
             <ChevronRightIcon className="h-6 w-6" />
@@ -188,10 +188,10 @@ export default function HistoryPage() {
             <div key={date.toISOString()} className={`p-3 rounded-lg flex flex-col md:flex-row md:items-start md:gap-4 w-full ${logs.length > 0 ? 'bg-gray-800' : 'bg-gray-900/50 border-2 border-dashed border-gray-700'}`}>
               <div className="flex flex-col items-center justify-center w-24 md:w-32 flex-shrink-0">
                 <span className="font-bold text-lg text-teal-300">
-                  {date.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' })}
+                  {date.toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo' })}
                 </span>
                 <span className="text-sm text-gray-400">
-                  ({date.toLocaleDateString('ja-JP', { weekday: 'short' })})
+                  ({date.toLocaleDateString('ja-JP', { weekday: 'short', timeZone: 'Asia/Tokyo' })})
                 </span>
               </div>
               

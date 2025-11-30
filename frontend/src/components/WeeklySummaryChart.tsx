@@ -85,7 +85,7 @@ export default function WeeklySummaryChart() {
         const formattedData = weekDates.map(date => {
           const existingData = response.data.chart_data.find((item: ActivityData) => item.date === date);
           return {
-            date: new Date(date).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }),
+            date: new Date(date).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit', timeZone: 'Asia/Tokyo' }),
             score: existingData?.score || null,
             sleep_hours: existingData?.sleep_hours || null,
             screen_time: existingData?.screen_time || null,
