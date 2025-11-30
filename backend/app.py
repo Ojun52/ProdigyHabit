@@ -89,7 +89,7 @@ google = oauth.register(
 @app.route('/api/login')
 def login():
     redirect_uri = os.getenv('GOOGLE_REDIRECT_URI') or url_for('auth_callback', _external=True)
-    session['next_url'] = request.args.get('next') or 'http://localhost:3000/'
+    session['next_url'] = request.args.get('next') or os.getenv('FRONTEND_URL') or 'http://localhost:3000/'
     return google.authorize_redirect(redirect_uri, prompt='select_account')
 
 
@@ -100,7 +100,7 @@ def auth_callback():
         user_info = google.get('userinfo').json()
     except Exception as e:
         logging.error(f"Error during OAuth callback: {e}")
-        return redirect(f"http://localhost:3000/login?error=true")
+        return redirect(f"{os.getenv('FRONTEND_URL') or 'http://localhost:3000'}/login?error=true")
 
     user = User.query.filter_by(google_id=user_info['id']).first()
     if not user:
@@ -109,7 +109,7 @@ def auth_callback():
         db.session.add(user)
         db.session.commit()
     login_user(user)
-    next_url = session.pop('next_url', 'http://localhost:3000/')
+    next_url = session.pop('next_url', os.getenv('FRONTEND_URL') or 'http://localhost:3000/')
     return redirect(next_url)
 
 
