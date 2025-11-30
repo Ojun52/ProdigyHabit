@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import api from '@/lib/api';
-import { Send, Mic, Bot, User } from 'lucide-react';
+import { Bot, User } from 'lucide-react';
+import ChatInput from './ChatInput'; // Import the new ChatInput component
 
 // Define message type
 interface Message {
@@ -20,16 +21,16 @@ declare global {
 
 export default function LoungeChat() {
   const [messages, setMessages] = useState<Message[]>([
-    { 
-      sender: 'ai', 
-      text: 'こんにちは！あなたの体調管理をサポートします。最近の睡眠時間、スマホ使用時間、今の気分（1〜5段階）など、なんでもお話しください。' 
+    {
+      sender: 'ai',
+      text: 'こんにちは！あなたの体調管理をサポートします。最近の睡眠時間、スマホ使用時間、今の気分（1〜5段階）など、なんでもお話しください。'
     }
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isLifeLogSaved, setIsLifeLogSaved] = useState(false); // To track if life log was saved
-  
+  const [cooldownMessage, setCooldownMessage] = useState<string | null>(null); // Added cooldownMessage state
+
   const recognition = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -50,7 +51,10 @@ export default function LoungeChat() {
           setInputValue(prev => prev + event.results[0][0].transcript);
           setIsListening(false);
         };
-        recognition.current.onerror = (event: any) => console.error('Speech recognition error:', event.error);
+        recognition.current.onerror = (event: any) => {
+            console.error('Speech recognition error:', event.error);
+            setIsListening(false);
+        };
         recognition.current.onend = () => setIsListening(false);
       }
     }
@@ -58,6 +62,7 @@ export default function LoungeChat() {
 
   const handleVoiceInput = () => {
     if (recognition.current && !isListening) {
+      setInputValue(''); // Clear input before voice input
       recognition.current.start();
       setIsListening(true);
     }
@@ -70,6 +75,7 @@ export default function LoungeChat() {
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
+    setCooldownMessage(null); // Clear any previous cooldown message
 
     try {
       const payload: { message: string; history: Message[] } = {
@@ -86,13 +92,17 @@ export default function LoungeChat() {
       if (lifeLogSaved) {
         setMessages(prev => [...prev, { sender: 'ai', text: aiReply }]);
         setMessages(prev => [...prev, { sender: 'ai', text: "あなたの生活記録を保存しました！AIアドバイス: " + lifeLogData.ai_advice }]);
-        setIsLifeLogSaved(true); // Mark as saved
       } else {
         setMessages(prev => [...prev, { sender: 'ai', text: aiReply }]);
       }
-    } catch (error) {
+    } catch (error: any) { // Type 'any' for error to access response
       console.error("Lounge Chat API error:", error);
-      setMessages(prev => [...prev, { sender: 'ai', text: "すみません、AIが応答できませんでした。" }]);
+      if (error.response && error.response.status === 429 && error.response.data.cooldown) {
+        setCooldownMessage(error.response.data.error);
+        setMessages(prev => [...prev, { sender: 'ai', text: error.response.data.error }]);
+      } else {
+        setMessages(prev => [...prev, { sender: 'ai', text: "すみません、AIが応答できませんでした。" }]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -106,8 +116,8 @@ export default function LoungeChat() {
           <div key={index} className={`flex items-end gap-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.sender === 'ai' && <Bot className="h-8 w-8 text-lime-400 flex-shrink-0" />}
             <div className={`px-4 py-2 rounded-lg max-w-xs md:max-w-md ${
-              msg.sender === 'user' 
-                ? 'bg-emerald-600 text-white rounded-br-none' 
+              msg.sender === 'user'
+                ? 'bg-emerald-600 text-white rounded-br-none'
                 : 'bg-green-700 text-gray-100 rounded-bl-none'
             }`}>
               <p className="whitespace-pre-wrap">{msg.text}</p>
@@ -127,27 +137,24 @@ export default function LoungeChat() {
       </div>
 
       {/* Input Area */}
-      <div className="p-4 bg-green-900/50 border-t border-green-700 flex items-center gap-2">
-        <button 
-          onClick={handleVoiceInput}
-          disabled={!recognition.current || isLoading}
-          className={`p-2 rounded-full hover:bg-green-700 disabled:opacity-50 ${isListening ? 'bg-red-500' : 'bg-transparent'}`}
-        >
-          <Mic className="h-6 w-6 text-gray-300" />
-        </button>
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-          className="flex-grow bg-green-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          placeholder="メッセージを入力..."
-          disabled={isLoading}
-        />
-        <button onClick={handleSendMessage} disabled={isLoading} className="bg-emerald-600 text-white p-3 rounded-lg hover:bg-emerald-700 disabled:bg-gray-600 cursor-pointer">
-          <Send size={20} />
-        </button>
-      </div>
+      <ChatInput
+        inputValue={inputValue}
+        setInputValue={setInputValue}
+        handleSendMessage={handleSendMessage}
+        handleVoiceInput={handleVoiceInput}
+        isLoading={isLoading}
+        isListening={isListening}
+        recognition={recognition}
+        maxLength={200}
+        placeholder="メッセージを入力..."
+        inputClassName="bg-green-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        sendButtonClassName="bg-emerald-600 text-white p-3 rounded-lg hover:bg-emerald-700 disabled:bg-gray-600 cursor-pointer"
+      />
+      {cooldownMessage && (
+        <div className="p-2 text-center text-amber-300 font-bold bg-green-900/50 border-t border-green-700">
+          {cooldownMessage}
+        </div>
+      )}
     </div>
   );
 }

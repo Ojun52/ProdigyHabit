@@ -1,8 +1,7 @@
-'use client';
-
 import { useState, useRef, useEffect } from 'react';
 import api from '@/lib/api';
-import { Send, Mic, Bot, User, Coffee } from 'lucide-react';
+import { Bot, User, Coffee } from 'lucide-react';
+import ChatInput from './ChatInput'; // Import the new ChatInput component
 
 // Define message type
 interface Message {
@@ -31,6 +30,7 @@ export default function FocusChat({ initialDuration, onStartBreak }: { initialDu
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSessionSaved, setIsSessionSaved] = useState(false); // To track if save was successful
+  const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
   
   const recognition = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -52,7 +52,10 @@ export default function FocusChat({ initialDuration, onStartBreak }: { initialDu
           setInputValue(prev => prev + event.results[0][0].transcript);
           setIsListening(false);
         };
-        recognition.current.onerror = (event: any) => console.error('Speech recognition error:', event.error);
+        recognition.current.onerror = (event: any) => {
+            console.error('Speech recognition error:', event.error);
+            setIsListening(false);
+        };
         recognition.current.onend = () => setIsListening(false);
       }
     }
@@ -60,6 +63,7 @@ export default function FocusChat({ initialDuration, onStartBreak }: { initialDu
 
   const handleVoiceInput = () => {
     if (recognition.current && !isListening) {
+      setInputValue(''); // Clear input before voice input
       recognition.current.start();
       setIsListening(true);
     }
@@ -72,6 +76,7 @@ export default function FocusChat({ initialDuration, onStartBreak }: { initialDu
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
+    setCooldownMessage(null); // Clear any previous cooldown message
 
     try {
       const payload: { message: string; history: Message[]; known_duration?: number } = {
@@ -85,20 +90,21 @@ export default function FocusChat({ initialDuration, onStartBreak }: { initialDu
       const response = await api.post('/chat/focus', payload);
 
       const aiReply = response.data.reply;
+      console.log("AI Raw Reply:", aiReply); // Debug: Log raw AI reply
       const jsonMarker = 'JSON_DATA:';
       const jsonIndex = aiReply.indexOf(jsonMarker);
 
       if (jsonIndex !== -1) {
         const visibleText = aiReply.substring(0, jsonIndex).trim();
         const jsonString = aiReply.substring(jsonIndex + jsonMarker.length).trim();
-        
-        if (visibleText) {
-          setMessages(prev => [...prev, { sender: 'ai', text: visibleText }]);
-        }
+        console.log("Extracted JSON String:", jsonString); // Debug: Log extracted JSON string
 
+        let cleanedJsonString = jsonString.replace(/^{{/, '{').replace(/}}$/, '}');
+        console.log("Cleaned JSON String (removed outer braces regex):", cleanedJsonString); // Debug: Log cleaned string
+        
         // Parse and save the data
         try {
-          const structuredData = JSON.parse(jsonString);
+          const structuredData = JSON.parse(cleanedJsonString);
           // Call the new unified save endpoint
           await api.post('/activity/log', {
             log_type: 'focus',
@@ -113,9 +119,14 @@ export default function FocusChat({ initialDuration, onStartBreak }: { initialDu
       } else {
         setMessages(prev => [...prev, { sender: 'ai', text: aiReply }]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Chat API error:", error);
-      setMessages(prev => [...prev, { sender: 'ai', text: "すみません、AIが応答できませんでした。" }]);
+      if (error.response && error.response.status === 429 && error.response.data.cooldown) {
+        setCooldownMessage(error.response.data.error);
+        setMessages(prev => [...prev, { sender: 'ai', text: error.response.data.error }]);
+      } else {
+        setMessages(prev => [...prev, { sender: 'ai', text: "すみません、AIが応答できませんでした。" }]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -164,26 +175,23 @@ export default function FocusChat({ initialDuration, onStartBreak }: { initialDu
 
       {/* Input Area - hidden after session is saved to prevent re-submission */}
       {!isSessionSaved && (
-        <div className="p-4 bg-gray-900/50 border-t border-gray-700 flex items-center gap-2">
-          <button 
-            onClick={handleVoiceInput}
-            disabled={!recognition.current || isLoading}
-            className={`p-2 rounded-full hover:bg-gray-700 disabled:opacity-50 ${isListening ? 'bg-red-500' : 'bg-transparent'}`}
-          >
-            <Mic className="h-6 w-6 text-gray-300" />
-          </button>
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-            className="flex-grow bg-gray-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            placeholder="メッセージを入力..."
-            disabled={isLoading}
-          />
-          <button onClick={handleSendMessage} disabled={isLoading} className="bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 disabled:bg-gray-600 cursor-pointer">
-            <Send size={20} />
-          </button>
+        <ChatInput
+          inputValue={inputValue}
+          setInputValue={setInputValue}
+          handleSendMessage={handleSendMessage}
+          handleVoiceInput={handleVoiceInput}
+          isLoading={isLoading}
+          isListening={isListening}
+          recognition={recognition}
+          maxLength={200}
+          placeholder="メッセージを入力..."
+          inputClassName="bg-gray-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          sendButtonClassName="bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 disabled:bg-gray-600 cursor-pointer"
+        />
+      )}
+      {cooldownMessage && (
+        <div className="p-2 text-center text-amber-300 font-bold bg-gray-900/50 border-t border-gray-700">
+          {cooldownMessage}
         </div>
       )}
     </div>
