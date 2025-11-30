@@ -4,8 +4,6 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { 
-  Bars3Icon, 
-  XMarkIcon,
   HomeIcon,
   ClockIcon,
   ChartBarIcon,
@@ -14,6 +12,7 @@ import {
   ArrowLeftOnRectangleIcon,
 } from '@heroicons/react/24/solid';
 import { BrainCircuit, Sofa } from 'lucide-react';
+import AnimatedHamburgerButton from './AnimatedHamburgerButton'; // Import the new component
 
 const Navbar = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -83,10 +82,12 @@ const Navbar = () => {
           </div>
           
           {/* Mobile Menu Button */}
-          <div className="md:hidden flex items-center">
-            <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-2 rounded-md hover:bg-gray-700 transition-colors cursor-pointer z-50">
-              {isMenuOpen ? <XMarkIcon className="h-6 w-6" /> : <Bars3Icon className="h-6 w-6" />}
-            </button>
+          <div className="md:hidden flex items-center z-50">
+            <AnimatedHamburgerButton 
+              isOpen={isMenuOpen}
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              ariaControls="mobile-menu"
+            />
           </div>
         </div>
 
@@ -103,9 +104,10 @@ const Navbar = () => {
           ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}
         >
           <div className="flex justify-end mb-6">
-            <button onClick={() => setIsMenuOpen(false)} className="p-2 rounded-md hover:bg-gray-700 transition-colors cursor-pointer">
-              <XMarkIcon className="h-6 w-6" />
-            </button>
+            <AnimatedHamburgerButton 
+              isOpen={true} // Always show as 'X' state inside the menu
+              onClick={() => setIsMenuOpen(false)} 
+            />
           </div>
           <div className="flex flex-col space-y-4">
               {navLinks.map(link => (
