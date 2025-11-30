@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+from urllib.parse import urlparse
 
 import google.generativeai as genai
 from authlib.integrations.flask_client import OAuth
@@ -44,6 +45,22 @@ app.secret_key = os.getenv("FLASK_APP_SECRET_KEY", "dev-secret-key")
 CORS_ORIGIN = os.getenv("CORS_ORIGIN", "http://localhost:3000")
 CORS(app, origins=CORS_ORIGIN, supports_credentials=True)
 
+# --- URL Validation Helper ---
+def is_safe_url(target):
+    """
+    Check if a URL is safe for redirection.
+    """
+    # Whitelisted domains
+    frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+    allowed_hosts = [urlparse(frontend_url).netloc, 'localhost:3000', 'localhost:5000']
+    
+    # Parse the target URL
+    try:
+        target_netloc = urlparse(target).netloc
+        return target_netloc in allowed_hosts
+    except Exception:
+        return False
+        
 # --- Database and Extensions ---
 db.init_app(app)  # Initialize db with the Flask app
 migrate = Migrate(app, db)  # Initialize Flask-Migrate
@@ -88,7 +105,8 @@ google = oauth.register(
 
 @app.route('/api/login')
 def login():
-    redirect_uri = os.getenv('GOOGLE_REDIRECT_URI') or url_for('auth_callback', _external=True)
+    # Prioritize environment variable, otherwise generate URL with HTTPS scheme for proxy compatibility
+    redirect_uri = os.getenv('GOOGLE_REDIRECT_URI') or url_for('auth_callback', _external=True, _scheme='https')
     session['next_url'] = request.args.get('next') or os.getenv('FRONTEND_URL') or 'http://localhost:3000/'
     return google.authorize_redirect(redirect_uri, prompt='select_account')
 
@@ -109,7 +127,13 @@ def auth_callback():
         db.session.add(user)
         db.session.commit()
     login_user(user)
+    
+    # --- Open Redirect Vulnerability Mitigation ---
     next_url = session.pop('next_url', os.getenv('FRONTEND_URL') or 'http://localhost:3000/')
+    if not is_safe_url(next_url):
+        # Fallback to a safe, default URL if the provided next_url is not in the whitelist
+        next_url = os.getenv('FRONTEND_URL') or 'http://localhost:3000/'
+        
     return redirect(next_url)
 
 
