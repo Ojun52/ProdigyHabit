@@ -18,8 +18,6 @@ const getWeekStart = (date: Date): Date => {
 
 // Helper component to render each type of log (reused)
 const LogItemContent = ({ log, onDelete }: { log: ActivityLog, onDelete: (id: number) => void }) => {
-  const data = log.data;
-
   const typeIcon = log.log_type === 'focus' ? <BrainCircuit className="h-4 w-4 text-indigo-400" /> : <Sofa className="h-4 w-4 text-green-400" />;
   const logTime = new Date(log.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
 
@@ -36,23 +34,23 @@ const LogItemContent = ({ log, onDelete }: { log: ActivityLog, onDelete: (id: nu
             <div className="flex items-center gap-2">
               <Star className="h-5 w-5 text-yellow-400" />
               <span className={`font-bold text-2xl ${
-                data.score >= 80 ? 'text-green-400' : data.score >= 60 ? 'text-yellow-400' : 'text-red-400'
+                log.data.score >= 80 ? 'text-green-400' : log.data.score >= 60 ? 'text-yellow-400' : 'text-red-400'
               }`}>
-                {data.score} <span className="text-base">点</span>
+                {log.data.score} <span className="text-base">点</span>
               </span>
-              <span className="text-gray-400 ml-2">({data.duration_minutes}分)</span>
+              <span className="text-gray-400 ml-2">({log.data.duration}分)</span>
             </div>
-            <p className="mt-2 text-gray-300 font-semibold">{data.task_content}</p>
-            {data.ai_feedback && <p className="mt-1 text-sm text-gray-400 italic">AI: {data.ai_feedback}</p>}
+            <p className="mt-2 text-gray-300 font-semibold">{log.data.title}</p>
+            {log.data.ai_feedback && <p className="mt-1 text-sm text-gray-400 italic">AI: {log.data.ai_feedback}</p>}
           </>
         ) : (
           <div className="space-y-2">
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-gray-300">
-              <span className="flex items-center gap-1"><Bed size={16} /> {data.sleep_hours}時間</span>
-              <span className="flex items-center gap-1"><Monitor size={16} /> {data.screen_time}分</span>
-              <span className="flex items-center gap-1"><Heart size={16} /> 気分: {data.mood}/5</span>
+              <span className="flex items-center gap-1"><Bed size={16} /> {log.data.sleep_hours}時間</span>
+              <span className="flex items-center gap-1"><Monitor size={16} /> {log.data.screen_time}分</span>
+              <span className="flex items-center gap-1"><Heart size={16} /> 気分: {log.data.mood}/5</span>
             </div>
-            {data.ai_advice && <p className="mt-2 text-sm text-gray-400 italic">AI: {data.ai_advice}</p>}
+            {log.data.ai_advice && <p className="mt-2 text-sm text-gray-400 italic">AI: {log.data.ai_advice}</p>}
           </div>
         )}
       </div>

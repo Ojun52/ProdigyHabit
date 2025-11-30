@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { BrainCircuit, Sofa } from 'lucide-react';
 import WeeklySummaryChart from '@/components/WeeklySummaryChart'; // Import the new component
-import { useEffect, useState } from 'react'; // Import useState
+import { useEffect, useState, Suspense } from 'react'; // Import Suspense
 import { useSearchParams } from 'next/navigation';
 
-const Dashboard = () => {
+const DashboardContent = () => {
   const searchParams = useSearchParams();
   const [loginMessage, setLoginMessage] = useState<string | null>(null); // State for the message
 
@@ -51,6 +51,14 @@ const Dashboard = () => {
         <WeeklySummaryChart /> {/* Use the new WeeklySummaryChart component here */}
       </div>
     </main>
+  );
+};
+
+const Dashboard = () => {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <DashboardContent />
+    </Suspense>
   );
 };
 

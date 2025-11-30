@@ -11,6 +11,7 @@ export default function FocusPage() {
   // 'chat_manual': User chose to chat manually without a timer
   // 'chat_post_pomodoro': User finished a timer and is now reporting
   const [view, setView] = useState<'hub' | 'pomodoro' | 'chat_manual' | 'chat_post_pomodoro'>('hub');
+  const [sessionType, setSessionType] = useState<'FOCUS' | 'BREAK'>('FOCUS');
   
   // To store the duration from a completed Pomodoro session
   const [completedDuration, setCompletedDuration] = useState<number>(0);
@@ -35,7 +36,10 @@ export default function FocusPage() {
       <p className="text-lg text-gray-400 mb-8">どのように活動を記録しますか？</p>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
         <div 
-          onClick={() => setView('pomodoro')}
+          onClick={() => {
+            setView('pomodoro');
+            setSessionType('FOCUS');
+          }}
           className="block p-8 bg-gray-800 rounded-lg shadow-lg hover:bg-gray-700 transition-colors text-center cursor-pointer"
         >
           <Timer className="mx-auto h-16 w-16 text-indigo-400" />
@@ -68,7 +72,7 @@ export default function FocusPage() {
             &larr; 執務室のトップに戻る
           </button>
           
-          {view === 'pomodoro' && <PomodoroManager onSessionComplete={handleSessionComplete} />}
+          {view === 'pomodoro' && <PomodoroManager sessionType={sessionType} onSessionComplete={handleSessionComplete} />}
           {view === 'chat_manual' && <FocusChat />}
           {view === 'chat_post_pomodoro' && <FocusChat initialDuration={completedDuration} onStartBreak={handleStartBreak} />}
         </div>

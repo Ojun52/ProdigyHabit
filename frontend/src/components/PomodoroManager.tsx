@@ -69,11 +69,11 @@ const Timer = ({ durationMinutes, onFinish, onStart, onCompleteManually }: { dur
 
 
 // Main Pomodoro Manager Component
-export default function PomodoroManager({ onSessionComplete }: { onSessionComplete: (duration: number) => void }) {
+export default function PomodoroManager({ onSessionComplete, sessionType: initialSessionType }: { onSessionComplete: (duration: number) => void; sessionType?: 'FOCUS' | 'BREAK' }) {
   const [view, setView] = useState<'SETTINGS' | 'TIMER'>('SETTINGS');
   const [focusMinutes, setFocusMinutes] = useState(25);
   const [breakMinutes, setBreakMinutes] = useState(5);
-  const [sessionType, setSessionType] = useState<'FOCUS' | 'BREAK'>('FOCUS');
+  const [sessionType, setSessionType] = useState<'FOCUS' | 'BREAK'>(initialSessionType || 'FOCUS');
   const [timerKey, setTimerKey] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
 
