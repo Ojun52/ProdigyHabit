@@ -88,7 +88,7 @@ google = oauth.register(
 
 @app.route('/api/login')
 def login():
-    redirect_uri = url_for('auth_callback', _external=True)
+    redirect_uri = os.getenv('GOOGLE_REDIRECT_URI') or url_for('auth_callback', _external=True)
     session['next_url'] = request.args.get('next') or 'http://localhost:3000/'
     return google.authorize_redirect(redirect_uri, prompt='select_account')
 

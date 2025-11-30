@@ -2,7 +2,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      target: dev
+      target: prod
     volumes:
       # Mount source code for hot-reloading
       - ./frontend:/app
@@ -14,7 +14,7 @@ services:
   backend:
     build:
       context: ./backend
-      target: dev
+      target: prod
     volumes:
       # Mount source code for hot-reloading
       - ./backend:/app
