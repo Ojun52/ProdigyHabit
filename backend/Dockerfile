@@ -31,4 +31,4 @@ COPY . .
 RUN useradd --create-home appuser && chown -R appuser:appuser /app
 USER appuser
 # Set the entrypoint to run Gunicorn
-CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:5000", "app:app"]
+CMD ["/bin/bash", "-c", "FLASK_APP=app.py flask db upgrade && gunicorn --workers 4 --bind 0.0.0.0:5000 app:app"]

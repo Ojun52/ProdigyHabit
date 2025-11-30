@@ -3,11 +3,33 @@
 import Link from 'next/link';
 import { BrainCircuit, Sofa } from 'lucide-react';
 import WeeklySummaryChart from '@/components/WeeklySummaryChart'; // Import the new component
+import { useEffect, useState } from 'react'; // Import useState
+import { useSearchParams } from 'next/navigation';
 
 const Dashboard = () => {
+  const searchParams = useSearchParams();
+  const [loginMessage, setLoginMessage] = useState<string | null>(null); // State for the message
+
+  useEffect(() => {
+    const message = searchParams.get('message');
+    if (message === 'login_required') {
+      setLoginMessage('このページにアクセスするにはログインが必要です。');
+      // URLからクエリパラメータを削除して、リロードしてもメッセージが再表示されないようにする
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, [searchParams]);
+
   return (
     <main className="container mx-auto p-6">
       <div className="max-w-5xl mx-auto space-y-8">
+
+        {/* Display Login Message if it exists */}
+        {loginMessage && (
+          <div className="bg-red-900 border border-red-700 text-white px-4 py-3 rounded-lg relative text-center mb-6" role="alert">
+            <span className="block sm:inline">{loginMessage}</span>
+          </div>
+        )}
+
         <div className="text-center">
           <h1 className="text-4xl font-bold text-teal-300">ProdigyHabit</h1>
           <p className="text-lg text-gray-400 mt-2">仕事と生活、両方のパフォーマンスを最大化する。</p>

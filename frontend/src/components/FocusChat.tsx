@@ -79,53 +79,29 @@ export default function FocusChat({ initialDuration, onStartBreak }: { initialDu
     setCooldownMessage(null); // Clear any previous cooldown message
 
     try {
-      const payload: { message: string; history: Message[]; known_duration?: number } = {
+      const payload = {
         message: userMessage.text,
-        history: messages,
+        history: messages, // Send the history *before* the new user message was added
+        known_duration: initialDuration,
       };
-      if (initialDuration) {
-        payload.known_duration = initialDuration;
-      }
 
       const response = await api.post('/chat/focus', payload);
+      const { reply, focus_log_saved } = response.data;
 
-      const aiReply = response.data.reply;
-      console.log("AI Raw Reply:", aiReply); // Debug: Log raw AI reply
-      const jsonMarker = 'JSON_DATA:';
-      const jsonIndex = aiReply.indexOf(jsonMarker);
+      setMessages(prev => [...prev, { sender: 'ai', text: reply }]);
 
-      if (jsonIndex !== -1) {
-        const visibleText = aiReply.substring(0, jsonIndex).trim();
-        const jsonString = aiReply.substring(jsonIndex + jsonMarker.length).trim();
-        console.log("Extracted JSON String:", jsonString); // Debug: Log extracted JSON string
-
-        let cleanedJsonString = jsonString.replace(/^{{/, '{').replace(/}}$/, '}');
-        console.log("Cleaned JSON String (removed outer braces regex):", cleanedJsonString); // Debug: Log cleaned string
-        
-        // Parse and save the data
-        try {
-          const structuredData = JSON.parse(cleanedJsonString);
-          // Call the new unified save endpoint
-          await api.post('/activity/log', {
-            log_type: 'focus',
-            data: structuredData
-          });
-          setMessages(prev => [...prev, { sender: 'ai', text: "記録をDBに保存しました！素晴らしい成果です！" }]);
-          setIsSessionSaved(true); // Mark session as saved
-        } catch (e) {
-          console.error("Failed to parse or save structured data:", e);
-          setMessages(prev => [...prev, { sender: 'ai', text: "データの保存に失敗しました…。" }]);
-        }
-      } else {
-        setMessages(prev => [...prev, { sender: 'ai', text: aiReply }]);
+      if (focus_log_saved) {
+        setIsSessionSaved(true);
       }
+      
     } catch (error: any) {
       console.error("Chat API error:", error);
       if (error.response && error.response.status === 429 && error.response.data.cooldown) {
         setCooldownMessage(error.response.data.error);
         setMessages(prev => [...prev, { sender: 'ai', text: error.response.data.error }]);
       } else {
-        setMessages(prev => [...prev, { sender: 'ai', text: "すみません、AIが応答できませんでした。" }]);
+        const errorMessage = error.response?.data?.error || "すみません、AIが応答できませんでした。";
+        setMessages(prev => [...prev, { sender: 'ai', text: errorMessage }]);
       }
     } finally {
       setIsLoading(false);

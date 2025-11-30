@@ -2,23 +2,21 @@ import datetime
 import json
 import logging
 import os
-import time
 import re
+import time
 
 import google.generativeai as genai
 from authlib.integrations.flask_client import OAuth
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, request, url_for, session
+from flask import Flask, jsonify, redirect, request, session, url_for
 from flask_cors import CORS
-from flask_login import (
-    LoginManager,
-    UserMixin,
-    current_user,
-    login_required,
-    login_user,
-    logout_user,
-)
+from flask_login import (LoginManager, UserMixin, current_user, login_required,
+                         login_user, logout_user)
+from flask_migrate import Migrate  # Import Flask-Migrate
 from flask_sqlalchemy import SQLAlchemy
+
+from models import (ActivityLog,  # Import db and models from models.py
+                     AiUsageLog, User, db)
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -47,7 +45,8 @@ CORS_ORIGIN = os.getenv("CORS_ORIGIN", "http://localhost:3000")
 CORS(app, origins=CORS_ORIGIN, supports_credentials=True)
 
 # --- Database and Extensions ---
-db = SQLAlchemy(app)
+db.init_app(app)  # Initialize db with the Flask app
+migrate = Migrate(app, db)  # Initialize Flask-Migrate
 oauth = OAuth(app)
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 
@@ -55,29 +54,19 @@ genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
 login_manager = LoginManager()
 login_manager.init_app(app)
 
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
 
 @login_manager.unauthorized_handler
 def unauthorized():
     return jsonify({"error": "User not authenticated"}), 401
 
 # --- Database Models (Refactored) ---
-class User(UserMixin, db.Model):
-    __tablename__ = 'users'
-    id = db.Column(db.Integer, primary_key=True)
-    google_id = db.Column(db.String(128), unique=True, nullable=False)
-    email = db.Column(db.String(128), unique=True, nullable=False)
-    name = db.Column(db.String(128), nullable=True)
-    activity_logs = db.relationship('ActivityLog', backref='user', lazy=True)
+# Moved to backend/models.py
 
-class ActivityLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.datetime.utcnow)
-    log_type = db.Column(db.String, nullable=False)
-    data = db.Column(db.JSON, nullable=False)
 
 # --- Google OAuth Configuration ---
 google = oauth.register(
@@ -95,11 +84,14 @@ google = oauth.register(
 )
 
 # --- Authentication Routes ---
+
+
 @app.route('/api/login')
 def login():
     redirect_uri = url_for('auth_callback', _external=True)
     session['next_url'] = request.args.get('next') or 'http://localhost:3000/'
-    return google.authorize_redirect(redirect_uri)
+    return google.authorize_redirect(redirect_uri, prompt='select_account')
+
 
 @app.route('/api/auth/callback')
 def auth_callback():
@@ -112,12 +104,14 @@ def auth_callback():
 
     user = User.query.filter_by(google_id=user_info['id']).first()
     if not user:
-        user = User(google_id=user_info['id'], email=user_info['email'], name=user_info.get('name'))
+        user = User(
+            google_id=user_info['id'], email=user_info['email'], name=user_info.get('name'))
         db.session.add(user)
         db.session.commit()
     login_user(user)
     next_url = session.pop('next_url', 'http://localhost:3000/')
     return redirect(next_url)
+
 
 @app.route('/api/logout', methods=['POST'])
 @login_required
@@ -125,22 +119,24 @@ def logout():
     logout_user()
     return jsonify({"success": True, "message": "Logged out successfully"})
 
+
 @app.route('/api/dashboard', methods=['GET'])
 @login_required
 def get_dashboard_data():
     """Fetches activity log data for the dashboard, optionally filtered by date range."""
-    
+
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
 
     # Default to current week if dates are not provided
     today = datetime.date.today()
     if start_date_str:
-        start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        start_date = datetime.datetime.strptime(
+            start_date_str, '%Y-%m-%d').date()
     else:
         # Default to the start of the current week (Monday)
         start_date = today - datetime.timedelta(days=today.weekday())
-    
+
     if end_date_str:
         end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
     else:
@@ -156,7 +152,7 @@ def get_dashboard_data():
         ActivityLog.created_at >= start_datetime,
         ActivityLog.created_at <= end_datetime
     ).order_by(ActivityLog.created_at.asc()).all()
-    
+
     # Initialize daily data structure for the week
     daily_data = {
         (start_date + datetime.timedelta(days=i)).strftime('%Y-%m-%d'): {
@@ -175,13 +171,16 @@ def get_dashboard_data():
             if log.log_type == 'focus':
                 daily_data[date_str]["score"] = log.data.get('score')
             elif log.log_type == 'life':
-                daily_data[date_str]["sleep_hours"] = log.data.get('sleep_hours')
-                daily_data[date_str]["screen_time"] = log.data.get('screen_time')
+                daily_data[date_str]["sleep_hours"] = log.data.get(
+                    'sleep_hours')
+                daily_data[date_str]["screen_time"] = log.data.get(
+                    'screen_time')
                 daily_data[date_str]["mood"] = log.data.get('mood')
 
     final_chart_data = list(daily_data.values())
 
     return jsonify({"chart_data": final_chart_data})
+
 
 # Constants for prompt delimiters (define at the top of the file, outside any function)
 INSTRUCTION_DELIMITER = "--- INSTRUCTIONS ---"
@@ -189,70 +188,97 @@ USER_MESSAGE_DELIMITER = "--- USER MESSAGE ---"
 CONVERSATION_HISTORY_DELIMITER = "--- CONVERSATION HISTORY ---"
 CONTEXT_DELIMITER = "--- CONTEXT ---"
 
+
 @app.route('/api/chat/focus', methods=['POST', 'OPTIONS'])
 @login_required
 def focus_chat():
     """Handles the conversational AI logic for focus session reporting."""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
-    
-    # Cooldown Logic: Check last focus log
-    last_focus_log = ActivityLog.query.filter(
-        ActivityLog.user_id == current_user.id,
-        ActivityLog.log_type == 'focus'
-    ).order_by(ActivityLog.created_at.desc()).first()
 
-    if last_focus_log:
-        time_since_last_log = datetime.datetime.utcnow() - last_focus_log.created_at
-        if time_since_last_log.total_seconds() < 600: # 10 minutes = 600 seconds
-            remaining_cooldown = 600 - int(time_since_last_log.total_seconds())
-            return jsonify({
-                "error": "前回の記録から時間が経っていません。少なくとも10分間隔を空けてください。",
-                "cooldown": True,
-                "remaining_cooldown_seconds": remaining_cooldown
-            }), 429
-            
     data = request.get_json()
     message = data.get('message')
     history = data.get('history', [])
-    known_duration = data.get('known_duration') # Optional pre-filled duration
+    known_duration = data.get('known_duration')
+
+    # Cooldown Check
+    if not any(msg.get('sender') == 'user' for msg in history):
+        last_focus_usage = AiUsageLog.query.filter(
+            AiUsageLog.user_id == current_user.id,
+            AiUsageLog.feature_type == 'focus'
+        ).order_by(AiUsageLog.used_at.desc()).first()
+
+        if last_focus_usage and (datetime.datetime.utcnow() - last_focus_usage.used_at).total_seconds() < 600:
+            remaining_seconds = int(600 - (datetime.datetime.utcnow() - last_focus_usage.used_at).total_seconds())
+            return jsonify({"error": f"次の利用まであと{(remaining_seconds // 60) + 1}分です。", "cooldown": True, "remaining_cooldown_seconds": remaining_seconds}), 429
+        
+        try:
+            db.session.add(AiUsageLog(user_id=current_user.id, feature_type='focus'))
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error saving initial AiUsageLog for focus_chat: {e}")
+            return jsonify({'error': 'サーバーエラーが発生しました。利用記録に失敗しました。'}), 500
 
     if not message:
         return jsonify({'error': 'Message is required'}), 400
-    
-    # Input validation for message length
-    if len(message) > 500: # Example limit
-        return jsonify({'error': 'Message too long (max 500 characters)'}), 400
 
-    # Base system instructions
-    system_instructions = "あなたは、ユーザーの成果報告を聞き出す親しみやすい専属コーチです。成果報告は生産性スコアとして評価されます。会話は5〜10ターン程度で完結するように努めてください。"
-
-    # Dynamic instructions based on what information is already known
-    dynamic_instructions = ""
-    if known_duration:
-        dynamic_instructions = f"目的:「タスク内容 (task_content)」を聞き出すこと。集中時間 ({known_duration}分) は既知。タスク内容が不明な場合は質問し、情報が揃ったら以下の有効なJSON形式で出力: `JSON_DATA: {{\"task_content\": \"...\", \"duration_minutes\": {known_duration}}}`"
-    else:
-        dynamic_instructions = "目的:「タスク内容 (task_content)」と「集中時間 (duration_minutes)」の2つを聞き出すこと。情報が足りなければ質問し、情報が揃ったら以下の有効なJSON形式で出力: `JSON_DATA: {{\"task_content\": \"...\", \"duration_minutes\": ...}}`"
-    
-    # Format chat history for the prompt, safely
-    formatted_history = "\n".join([f"{msg['sender']}: {msg['text']}" for msg in history])
-
-    prompt = (
-        f"{INSTRUCTION_DELIMITER}\n"
-        f"{system_instructions}\n"
-        f"{dynamic_instructions}\n"
-        f"{CONVERSATION_HISTORY_DELIMITER}\n"
-        f"{formatted_history}\n"
-        f"{USER_MESSAGE_DELIMITER}\n"
-        f"「{message}」\n"
-        f"あなたの応答："
+    # New, more direct prompt for the AI
+    system_instructions = (
+        "あなたはユーザーの成果報告を聞き出す専属コーチです。"
+        "目的は「タスク内容(task_content)」と「集中時間(duration_minutes)」を特定することです。"
+        "両方の情報が揃ったと判断したら、他のテキストは一切含めず、有効なJSONオブジェクトだけを応答してください。"
+        "例: {\"task_content\": \"資料作成\", \"duration_minutes\": 25}"
+        "情報が足りない場合は、質問を続けてください。"
+        "注意: JSONのキーと文字列の値は必ずダブルクォート `\"` で囲ってください。"
     )
     
+    formatted_history = "\n".join([f"{msg['sender']}: {msg['text']}" for msg in history])
+    if known_duration:
+         formatted_history = f"system: 集中時間は{known_duration}分です。\n" + formatted_history
+
+
+    prompt = f"{system_instructions}\n\n--- Conversation History ---\n{formatted_history}\n\n--- User Message ---\n{message}\n\nあなたの応答:"
+
     try:
         text_model = genai.GenerativeModel('gemini-2.5-flash')
         response = text_model.generate_content(prompt)
-        
-        return jsonify({'reply': response.text})
+        ai_reply = response.text.strip()
+
+        # Attempt to parse the entire response as JSON
+        try:
+            focus_log_data = json.loads(ai_reply)
+            task_content = focus_log_data.get('task_content')
+            duration = focus_log_data.get('duration_minutes')
+
+            if not task_content or duration is None:
+                raise ValueError("Incomplete data in JSON")
+
+            # --- Scoring and Saving Logic (moved from save_activity_log) ---
+            scoring_prompt = f"""ユーザーの成果報告を評価し、生産性スコア（0〜100点）を採点し、簡潔なフィードバックを日本語で生成してください。\n成果報告:「{task_content}」（作業時間: {duration}分）\n出力は必ず以下の有効なJSON形式とします。\n{{\"score\": integer, \"ai_feedback\": \"string\"}}"""
+            
+            try:
+                json_model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+                scoring_response = json_model.generate_content(scoring_prompt)
+                ai_results = json.loads(scoring_response.text)
+                
+                focus_log_data['score'] = ai_results.get('score')
+                focus_log_data['ai_feedback'] = ai_results.get('ai_feedback')
+            except Exception as ai_e:
+                logging.error(f"AI scoring failed for user {current_user.id}: {ai_e}")
+                focus_log_data['score'] = 0
+                focus_log_data['ai_feedback'] = "AIによる評価に失敗しました。"
+
+            new_log = ActivityLog(user_id=current_user.id, log_type='focus', data=focus_log_data)
+            db.session.add(new_log)
+            db.session.commit()
+            
+            final_reply = f"{focus_log_data.get('ai_feedback')}\n\n（成果を記録しました。）"
+            return jsonify({'reply': final_reply, 'focus_log_saved': True})
+
+        except (json.JSONDecodeError, ValueError):
+            # If parsing fails, it's a regular conversational turn
+            return jsonify({'reply': ai_reply, 'focus_log_saved': False})
 
     except Exception as e:
         logging.error(f"Error during focus chat for user {current_user.id}: {e}")
@@ -266,7 +292,7 @@ def save_activity_log():
     """Saves a new activity log, handling AI scoring for focus logs."""
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
-        
+
     data = request.get_json()
     log_type = data.get('log_type')
     log_data = data.get('data')
@@ -292,17 +318,19 @@ def save_activity_log():
             try:
                 json_model = genai.GenerativeModel(
                     'gemini-2.5-flash',
-                    generation_config={"response_mime_type": "application/json"}
+                    generation_config={
+                        "response_mime_type": "application/json"}
                 )
                 response = json_model.generate_content(prompt)
                 ai_results = json.loads(response.text)
-                
+
                 # Add AI results to the data to be saved
                 log_data['score'] = ai_results.get('score')
                 log_data['ai_feedback'] = ai_results.get('ai_feedback')
 
             except Exception as ai_e:
-                logging.error(f"AI scoring failed for user {current_user.id}: {ai_e}")
+                logging.error(
+                    f"AI scoring failed for user {current_user.id}: {ai_e}")
                 # If AI fails, save with placeholder data
                 log_data['score'] = 0
                 log_data['ai_feedback'] = "AIによる評価に失敗しました。"
@@ -316,17 +344,20 @@ def save_activity_log():
         db.session.add(new_log)
         db.session.commit()
         return jsonify({'message': 'Activity log saved successfully', 'log_id': new_log.id}), 201
-        
+
     except Exception as e:
         db.session.rollback()
-        logging.error(f"Error saving activity log for user {current_user.id}: {e}")
+        logging.error(
+            f"Error saving activity log for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
+
 
 @app.route('/api/history', methods=['GET'])
 @login_required
 def get_history():
     try:
-        logs = ActivityLog.query.filter_by(user_id=current_user.id).order_by(ActivityLog.created_at.desc()).all()
+        logs = ActivityLog.query.filter_by(user_id=current_user.id).order_by(
+            ActivityLog.created_at.desc()).all()
         result = [
             {
                 "id": log.id,
@@ -338,8 +369,10 @@ def get_history():
         ]
         return jsonify(result)
     except Exception as e:
-        logging.error(f"Error fetching history for user {current_user.id}: {e}")
+        logging.error(
+            f"Error fetching history for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
+
 
 @app.route('/api/feedback', methods=['GET', 'OPTIONS'])
 @login_required
@@ -363,7 +396,7 @@ def get_feedback():
         for log in logs:
             entry = f"- Date: {log.created_at.strftime('%Y-%m-%d')}, Type: {log.log_type}, Data: {json.dumps(log.data)}"
             log_summary.append(entry)
-        
+
         summary_text = "\n".join(log_summary)
 
         prompt = (
@@ -371,19 +404,44 @@ def get_feedback():
             f"以下のユーザーの過去数日間の仕事(focus)と生活(life)ログを分析し、フィードバックを生成してください。\n"
             f"{CONTEXT_DELIMITER}\n"
             f"{summary_text}\n"
-            f"{CONVERSATION_HISTORY_DELIMITER}\n" # Using existing delimiter for consistency
+            # Using existing delimiter for consistency
+            f"{CONVERSATION_HISTORY_DELIMITER}\n"
             f"データに基づき、仕事と生活の**相関関係を分析**し、以下の2点を日本語で生成してください。\n\n"
             f"1. **総括**: 生産性と生活のバランスの良い点・改善点を3文以内で要約。\n"
             f"2. **ワンポイントアドバイス**: 生産性とウェルビーイング両立のための具体的行動を2つ提案。（実践可能な工夫を優先し、精神論は避ける。）"
         )
         text_model = genai.GenerativeModel('gemini-2.5-flash')
         response = text_model.generate_content(prompt)
-        
+
         return jsonify({'feedback': response.text})
 
     except Exception as e:
-        logging.error(f"Error generating feedback for user {current_user.id}: {e}")
+        logging.error(
+            f"Error generating feedback for user {current_user.id}: {e}")
         return jsonify({'error': 'An internal server error occurred.'}), 500
+
+
+@app.route('/api/history/<int:log_id>', methods=['DELETE'])
+@login_required
+def delete_activity_log(log_id):
+    """Deletes a specific ActivityLog entry by ID for the current user."""
+    try:
+        log_to_delete = ActivityLog.query.filter_by(
+            id=log_id, user_id=current_user.id).first()
+
+        if not log_to_delete:
+            return jsonify({'error': 'Activity log not found or unauthorized.'}), 404
+
+        db.session.delete(log_to_delete)
+        db.session.commit()
+        return jsonify({'message': 'Activity log deleted successfully.'}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        logging.error(
+            f"Error deleting activity log {log_id} for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
+
 
 @app.route('/api/chat/lounge', methods=['POST', 'OPTIONS'])
 @login_required
@@ -392,29 +450,57 @@ def lounge_chat():
     if request.method == 'OPTIONS':
         return jsonify({'status': 'ok'}), 200
 
-    # Cooldown Logic: Check last life log
-    last_life_log = ActivityLog.query.filter(
-        ActivityLog.user_id == current_user.id,
-        ActivityLog.log_type == 'life'
-    ).order_by(ActivityLog.created_at.desc()).first()
-
-    if last_life_log:
-        time_since_last_log = datetime.datetime.utcnow() - last_life_log.created_at
-        if time_since_last_log.total_seconds() < 10800: # 3 hours = 10800 seconds
-            remaining_cooldown = 10800 - int(time_since_last_log.total_seconds())
-            return jsonify({
-                "error": "前回の記録から時間が経っていません。少なくとも3時間間隔を空けてください。",
-                "cooldown": True,
-                "remaining_cooldown_seconds": remaining_cooldown
-            }), 429
-
     data = request.get_json()
     message = data.get('message')
+    history = data.get('history', [])
+
+    # Only perform cooldown check and usage logging at the start of a new conversation (when history is empty)
+    if not any(msg.get('sender') == 'user' for msg in history):
+        # Cooldown Logic: Check last AiUsageLog for 'lounge'
+        last_lounge_usage = AiUsageLog.query.filter(
+            AiUsageLog.user_id == current_user.id,
+            AiUsageLog.feature_type == 'lounge'
+        ).order_by(AiUsageLog.used_at.desc()).first()
+
+        if last_lounge_usage:
+            time_since_last_usage = datetime.datetime.utcnow() - last_lounge_usage.used_at
+            cooldown_period_seconds = 10800  # 3 hours
+            if time_since_last_usage.total_seconds() < cooldown_period_seconds:
+                remaining_cooldown = int(
+                    cooldown_period_seconds - time_since_last_usage.total_seconds())
+                remaining_minutes = (remaining_cooldown // 60)
+                remaining_hours = (remaining_minutes // 60)
+
+                message_parts = []
+                if remaining_hours > 0:
+                    message_parts.append(f"{remaining_hours}時間")
+                    remaining_minutes %= 60
+                if remaining_minutes > 0:
+                    message_parts.append(f"{remaining_minutes}分")
+
+                error_message = f"次の利用まであと{''.join(message_parts)}です。" if message_parts else "次の利用まであと1分未満です。"
+
+                return jsonify({
+                    "error": error_message,
+                    "cooldown": True,
+                    "remaining_cooldown_seconds": remaining_cooldown
+                }), 429
+        
+        # Record AI usage at the beginning of the conversation
+        try:
+            new_ai_usage = AiUsageLog(user_id=current_user.id, feature_type='lounge')
+            db.session.add(new_ai_usage)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logging.error(f"Error saving initial AiUsageLog for user {current_user.id}: {e}")
+            return jsonify({'error': 'サーバーエラーが発生しました。利用記録に失敗しました。'}), 500
+
     if not message:
         return jsonify({'error': 'Message is required'}), 400
 
     # Input validation for message length
-    if len(message) > 500: # Example limit
+    if len(message) > 500:  # Example limit
         return jsonify({'error': 'Message too long (max 500 characters)'}), 400
 
     try:
@@ -432,22 +518,25 @@ def lounge_chat():
             for log in recent_focus_logs:
                 task_content = log.data.get('task_content', '不明なタスク')
                 duration = log.data.get('duration_minutes', 0)
-                focus_context_items.append(f"- {log.created_at.strftime('%Y-%m-%d %H:%M')}: {task_content} ({duration}分)")
-            focus_context_str = "ユーザーの直近24時間の仕事（Focus）記録（生産性スコアも含む）:\n" + "\n".join(focus_context_items)
-        
-        
+                focus_context_items.append(
+                    f"- {log.created_at.strftime('%Y-%m-%d %H:%M')}: {task_content} ({duration}分)")
+            focus_context_str = "ユーザーの直近24時間の仕事（Focus）記録（生産性スコアも含む）:\n" + \
+                "\n".join(focus_context_items)
+
         # Base system instructions
         system_instructions = "あなたはユーザーの体調管理を担うメンターです。以下の情報を聞き出し、仕事内容との因果関係を指摘し、コンディション調整のアドバイスをしてください。会話は5〜10ターン程度で完結するように努めてください。情報の聞き出し優先度:「睡眠時間」「スマホ使用時間(概算)」「今の気分(1-5)」"
 
         json_output_instruction = (
             "情報が揃ったら、以下の有効な隠しJSONを出力してください: \n"
-            "`JSON_DATA: {{\"sleep_hours\": <float>, \"screen_time\": <int>, \"mood\": <int>, \"ai_advice\": \"<string>\"}}`\n"
+            "JSON_DATA: ```json\n{{\"sleep_hours\": <float>, \"screen_time\": <int>, \"mood\": <int>, \"ai_advice\": \"<string>\"}}\n```\n"
             "sleep_hoursは少数点以下1桁まで、screen_timeは整数、moodは1-5の整数で記録してください。\n"
-            "ai_adviceは、仕事内容との因果関係と具体的なアドバイスを含み、200〜300文字程度に要約してください。"
+            "ai_adviceは、仕事内容との因果関係と具体的なアドバイスを含み、200〜300文字程度に要約してください。\n"
+            "注意: JSON_DATA: の後には、**直接** 有効なJSONオブジェクトを配置してください。文字列として引用符で囲まないでください。キーと文字列の値は必ずダブルクォート `\"` で囲ってください。"
         )
 
         # Format chat history for the prompt, safely
-        formatted_history = "\n".join([f"{msg['sender']}: {msg['text']}" for msg in history])
+        formatted_history = "\n".join(
+            [f"{msg['sender']}: {msg['text']}" for msg in history])
 
         prompt = (
             f"{INSTRUCTION_DELIMITER}\n"
@@ -461,21 +550,30 @@ def lounge_chat():
             f"「{message}」\n"
             f"あなたの応答："
         )
-        
+
         text_model = genai.GenerativeModel('gemini-2.5-flash')
         response = text_model.generate_content(prompt)
         ai_reply = response.text
 
+        # Log the raw AI reply for debugging
+        logging.warning(f"RAW AI REPLY (lounge_chat): {ai_reply}")
+
         # 3. 保存: JSONが検出されたら、ActivityLog に log_type='life' で保存する。
-        json_match = re.search(r'JSON_DATA:\s*(\{.*\})', ai_reply, re.DOTALL)
+        json_match = re.search(r'JSON_DATA:\s*`{3}json\n(\{.*\})\n`{3}', ai_reply, re.DOTALL | re.IGNORECASE)
+        if not json_match:
+            # Fallback for cases where AI might not use the markdown block
+            json_match = re.search(r'JSON_DATA:\s*(\{.*\})', ai_reply, re.DOTALL | re.IGNORECASE)
+        
         if json_match:
             try:
                 json_data_str = json_match.group(1)
                 life_log_data = json.loads(json_data_str)
-                
-                # Clean up the AI reply by removing the JSON_DATA part
-                ai_reply = ai_reply.replace(json_match.group(0), "").strip()
 
+                # Clean up the AI reply and add confirmation message
+                ai_reply_cleaned = ai_reply.replace(json_match.group(0), "").strip()
+                save_confirmation_message = "\n\n（生活ログを記録しました。）"
+                final_reply = ai_reply_cleaned + save_confirmation_message
+                
                 new_log = ActivityLog(
                     user_id=current_user.id,
                     log_type='life',
@@ -483,9 +581,10 @@ def lounge_chat():
                 )
                 db.session.add(new_log)
                 db.session.commit()
-                return jsonify({'reply': ai_reply, 'life_log_saved': True, 'life_log_data': life_log_data})
+                return jsonify({'reply': final_reply, 'life_log_saved': True, 'life_log_data': life_log_data})
             except json.JSONDecodeError as json_e:
-                logging.error(f"Failed to decode JSON_DATA from AI response: {json_e}")
+                logging.error(
+                    f"Failed to decode JSON_DATA from AI response: {json_e}")
                 # Continue without saving life log if JSON is malformed
             except Exception as save_e:
                 logging.error(f"Error saving life log: {save_e}")
@@ -494,7 +593,8 @@ def lounge_chat():
         return jsonify({'reply': ai_reply, 'life_log_saved': False})
 
     except Exception as e:
-        logging.error(f"Error during lounge chat for user {current_user.id}: {e}")
+        logging.error(
+            f"Error during lounge chat for user {current_user.id}: {e}")
         return jsonify({'error': 'AI is currently unavailable.'}), 500
 
 
@@ -502,8 +602,9 @@ def lounge_chat():
 @app.cli.command("init-db")
 def init_db_command():
     """Initializes the database by creating all tables."""
-    db.create_all()
-    print("Database initialized successfully.")
+    # db.create_all() # Managed by Flask-Migrate now
+    print("Database initialization is now managed by Flask-Migrate. Please use 'flask db init' and 'flask db upgrade'.")
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

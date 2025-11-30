@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import api from '@/lib/api';
-import { ActivityLog } from '@/types'; // Import the new types
+import { ActivityLog } from '@/types';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
-import { BrainCircuit, Sofa, Star, Heart, Monitor, Bed } from 'lucide-react'; // Lucide Icons
+import { BrainCircuit, Sofa, Star, Heart, Monitor, Bed, Trash2 } from 'lucide-react'; // Lucide Icons
 
 // Helper to get the start of the week (Monday)
 const getWeekStart = (date: Date): Date => {
@@ -17,38 +17,54 @@ const getWeekStart = (date: Date): Date => {
 };
 
 // Helper component to render each type of log (reused)
-const LogItemContent = ({ log }: { log: ActivityLog }) => {
+const LogItemContent = ({ log, onDelete }: { log: ActivityLog, onDelete: (id: number) => void }) => {
   const data = log.data;
 
-  if (log.log_type === 'focus') {
-    return (
-      <>
-        <div className="flex items-center gap-2">
-          <Star className="h-5 w-5 text-yellow-400" />
-          <span className={`font-bold text-2xl ${
-            data.score >= 80 ? 'text-green-400' : data.score >= 60 ? 'text-yellow-400' : 'text-red-400'
-          }`}>
-            {data.score} <span className="text-base">点</span>
-          </span>
-          <span className="text-gray-400 ml-2">({data.duration_minutes}分)</span>
+  const typeIcon = log.log_type === 'focus' ? <BrainCircuit className="h-4 w-4 text-indigo-400" /> : <Sofa className="h-4 w-4 text-green-400" />;
+  const logTime = new Date(log.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+
+  return (
+    <div className="flex justify-between items-start">
+      <div className="flex flex-col">
+        <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
+            {typeIcon}
+            <span>{logTime}</span>
         </div>
-        <p className="mt-2 text-gray-300 font-semibold">{data.task_content}</p>
-        {data.ai_feedback && <p className="mt-1 text-sm text-gray-400 italic">AI: {data.ai_feedback}</p>}
-      </>
-    );
-  } else if (log.log_type === 'life') {
-    return (
-      <div className="space-y-2">
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-gray-300">
-          <span className="flex items-center gap-1"><Bed size={16} /> {data.sleep_hours}時間</span>
-          <span className="flex items-center gap-1"><Monitor size={16} /> {data.screen_time_minutes}分</span>
-          <span className="flex items-center gap-1"><Heart size={16} /> 気分: {data.mood}/5</span>
-        </div>
-        {data.ai_advice && <p className="mt-2 text-sm text-gray-400 italic">AI: {data.ai_advice}</p>}
+        {log.log_type === 'focus' ? (
+          <>
+            <div className="flex items-center gap-2">
+              <Star className="h-5 w-5 text-yellow-400" />
+              <span className={`font-bold text-2xl ${
+                data.score >= 80 ? 'text-green-400' : data.score >= 60 ? 'text-yellow-400' : 'text-red-400'
+              }`}>
+                {data.score} <span className="text-base">点</span>
+              </span>
+              <span className="text-gray-400 ml-2">({data.duration_minutes}分)</span>
+            </div>
+            <p className="mt-2 text-gray-300 font-semibold">{data.task_content}</p>
+            {data.ai_feedback && <p className="mt-1 text-sm text-gray-400 italic">AI: {data.ai_feedback}</p>}
+          </>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-gray-300">
+              <span className="flex items-center gap-1"><Bed size={16} /> {data.sleep_hours}時間</span>
+              <span className="flex items-center gap-1"><Monitor size={16} /> {data.screen_time}分</span>
+              <span className="flex items-center gap-1"><Heart size={16} /> 気分: {data.mood}/5</span>
+            </div>
+            {data.ai_advice && <p className="mt-2 text-sm text-gray-400 italic">AI: {data.ai_advice}</p>}
+          </div>
+        )}
       </div>
-    );
-  }
-  return null; // Should not happen
+      <button 
+        onClick={() => onDelete(log.id)} 
+        className="p-1 text-gray-500 hover:text-red-500 transition-colors cursor-pointer"
+        title="記録を削除"
+      >
+        <Trash2 size={20} />
+      </button>
+    </div>
+  );
 };
 
 
@@ -63,7 +79,16 @@ export default function HistoryPage() {
       setIsLoading(true);
       try {
         const response = await api.get('/history');
-        setAllLogs(response.data);
+        // Sort logs by created_at descending, then by ID descending to ensure stable order for UI if timestamps are identical
+        const sortedLogs = response.data.sort((a: ActivityLog, b: ActivityLog) => {
+          const dateA = new Date(a.created_at).getTime();
+          const dateB = new Date(b.created_at).getTime();
+          if (dateA === dateB) {
+            return b.id - a.id; // Secondary sort by ID for stability
+          }
+          return dateB - dateA; // Primary sort by date descending
+        });
+        setAllLogs(sortedLogs);
       } catch (err: any) {
         if (err.response?.status === 401) {
           setError('履歴を見るにはログインしてください。');
@@ -77,6 +102,19 @@ export default function HistoryPage() {
     };
     fetchHistory();
   }, []);
+
+  const handleDeleteLog = async (logId: number) => {
+    if (!window.confirm('この記録を削除してもよろしいですか？一度削除すると元に戻せません。')) {
+      return;
+    }
+    try {
+      await api.delete(`/history/${logId}`);
+      setAllLogs(prevLogs => prevLogs.filter(log => log.id !== logId));
+    } catch (err) {
+      console.error("Failed to delete log:", err);
+      alert('記録の削除に失敗しました。');
+    }
+  };
 
   const weekData = useMemo(() => {
     const startOfWeek = getWeekStart(currentDate);
@@ -164,7 +202,7 @@ export default function HistoryPage() {
                   <div className="space-y-2">
                     {logs.map(log => (
                       <div key={log.id} className="text-left bg-gray-700 p-2 rounded-md">
-                        <LogItemContent log={log} />
+                        <LogItemContent log={log} onDelete={handleDeleteLog} />
                       </div>
                     ))}
                   </div>
