@@ -16,6 +16,18 @@ const getWeekStart = (date: Date): Date => {
   return d;
 };
 
+// Helper to get a YYYY-MM-DD string in JST
+const getJSTDateString = (date: Date): string => {
+  // Using en-CA locale is a reliable way to get YYYY-MM-DD format
+  const options: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Tokyo',
+  };
+  return new Intl.DateTimeFormat('en-CA', options).format(date);
+};
+
 // Helper component to render each type of log (reused)
 const LogItemContent = ({ log, onDelete }: { log: ActivityLog, onDelete: (id: number) => void }) => {
   const typeIcon = log.log_type === 'focus' ? <BrainCircuit className="h-4 w-4 text-indigo-400" /> : <Sofa className="h-4 w-4 text-green-400" />;
@@ -126,10 +138,10 @@ export default function HistoryPage() {
       return logDate >= startOfWeek && logDate <= endOfWeek;
     });
 
-    // Group logs by day
+    // Group logs by day using JST
     const logsByDay: { [key: string]: ActivityLog[] } = {};
     logsInWeek.forEach(log => {
-      const dayString = new Date(log.created_at).toISOString().split('T')[0];
+      const dayString = getJSTDateString(new Date(log.created_at));
       if (!logsByDay[dayString]) {
         logsByDay[dayString] = [];
       }
@@ -140,7 +152,7 @@ export default function HistoryPage() {
     for (let i = 0; i < 7; i++) {
       const day = new Date(startOfWeek);
       day.setDate(startOfWeek.getDate() + i);
-      const dayString = day.toISOString().split('T')[0];
+      const dayString = getJSTDateString(day);
       weekDisplayData.push({
         date: day,
         logs: logsByDay[dayString] || []

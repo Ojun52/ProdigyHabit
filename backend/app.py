@@ -261,10 +261,10 @@ def focus_chat():
     # New, more direct prompt for the AI
     system_instructions = (
         "あなたはユーザーの成果報告を聞き出す専属コーチです。"
-        "目的は「タスク内容(task_content)」と「集中時間(duration_minutes)」を特定することです。"
-        "両方の情報が揃ったと判断したら、他のテキストは一切含めず、有効なJSONオブジェクトだけを応答してください。"
-        "例: {\"task_content\": \"資料作成\", \"duration_minutes\": 25}"
-        "情報が足りない場合は、質問を続けてください。"
+        "目的は「タスク内容(task_content)」、「集中時間(duration_minutes)」、「自己評価の集中度(focus_level, 1-5の5段階)」を特定することです。"
+        "全ての情報が揃ったと判断したら、他のテキストは一切含めず、有効なJSONオブジェクトだけを応答してください。"
+        "例: {\"task_content\": \"資料作成\", \"duration_minutes\": 25, \"focus_level\": 4}"
+        "情報が足りない場合は、質問を続けてください。特に集中度はユーザーにとって新しい概念かもしれないので、丁寧に聞いてください。"
         "注意: JSONのキーと文字列の値は必ずダブルクォート `\"` で囲ってください。"
     )
 
@@ -286,42 +286,43 @@ def focus_chat():
             focus_log_data = json.loads(ai_reply)
             task_content = focus_log_data.get('task_content')
             duration = focus_log_data.get('duration_minutes')
+            focus_level = focus_log_data.get('focus_level')
 
-            if not task_content or duration is None:
+            if not task_content or duration is None or focus_level is None:
                 raise ValueError("Incomplete data in JSON")
 
             # --- Scoring and Saving Logic (moved from save_activity_log) ---
-            scoring_prompt = f"""ユーザーの成果報告を評価し、生産性スコア（0〜100点）を採点し、簡潔なフィードバックを日本語で生成してください。\n成果報告:「{task_content}」（作業時間: {duration}分）\n出力は必ず以下の有効なJSON形式とします。\n{{\"score\": integer, \"ai_feedback\": \"string\"}}"""
-
+            scoring_prompt = f"""ユーザーの成果報告を評価し、生産性スコア（0〜100点）を採点し、簡潔なフィードバックを日本語で生成してください。
+- 成果報告:「{task_content}」
+- 作業時間: {duration}分
+- 自己評価集中度: {focus_level}/5
+出力は必ず以下の有効なJSON形式とします。
+{{\"score\": integer, \"ai_feedback\": \"string\"}}"""
+            
             try:
-                json_model = genai.GenerativeModel(
-                    'gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+                json_model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
                 scoring_response = json_model.generate_content(scoring_prompt)
                 ai_results = json.loads(scoring_response.text)
-
+                
                 focus_log_data['score'] = ai_results.get('score')
                 focus_log_data['ai_feedback'] = ai_results.get('ai_feedback')
             except Exception as ai_e:
-                logging.error(
-                    f"AI scoring failed for user {current_user.id}: {ai_e}")
+                logging.error(f"AI scoring failed for user {current_user.id}: {ai_e}")
                 focus_log_data['score'] = 0
                 focus_log_data['ai_feedback'] = "AIによる評価に失敗しました。"
 
-            new_log = ActivityLog(user_id=current_user.id,
-                                  log_type='focus', data=focus_log_data)
+            new_log = ActivityLog(user_id=current_user.id, log_type='focus', data=focus_log_data)
             db.session.add(new_log)
             db.session.commit()
-
+            
             final_reply = f"{focus_log_data.get('ai_feedback')}\n\n（成果を記録しました。）"
             return jsonify({'reply': final_reply, 'focus_log_saved': True})
-
         except (json.JSONDecodeError, ValueError):
             # If parsing fails, it's a regular conversational turn
             return jsonify({'reply': ai_reply, 'focus_log_saved': False})
 
     except Exception as e:
-        logging.error(
-            f"Error during focus chat for user {current_user.id}: {e}")
+        logging.error(f"Error during focus chat for user {current_user.id}: {e}")
         return jsonify({'error': 'AIが現在利用できません。'}), 500
 
 
@@ -571,7 +572,8 @@ def lounge_chat():
         json_output_instruction = (
             "情報が揃ったら、以下の有効な隠しJSONを出力してください: \n"
             "JSON_DATA: ```json\n{{\"sleep_hours\": <float>, \"screen_time\": <int>, \"mood\": <int>, \"ai_advice\": \"<string>\"}}\n```\n"
-            "sleep_hoursは少数点以下1桁まで、screen_timeは整数、moodは1-5の整数で記録してください。\n"
+            "sleep_hoursは少数点以下1桁まで、moodは1-5の整数で記録してください。\n"
+            "screen_timeは整数（単位：分）で記録してください。ユーザーが「時間」で回答した場合は、分に変換してください。（例：「2時間」→ 120）\n"
             "ai_adviceは、仕事内容との因果関係と具体的なアドバイスを含み、200〜300文字程度に要約してください。\n"
             "注意: JSON_DATA: の後には、**直接** 有効なJSONオブジェクトを配置してください。文字列として引用符で囲まないでください。キーと文字列の値は必ずダブルクォート `\"` で囲ってください。"
         )
