@@ -1,36 +1,45 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import api from '@/lib/api';
 import FocusChat from '@/components/FocusChat';
 import PomodoroManager from '@/components/PomodoroManager';
 import { BrainCircuit, Timer, MessageSquare } from 'lucide-react';
 
 export default function FocusPage() {
-  // 'hub': Initial choice
-  // 'pomodoro': The Pomodoro timer UI is active
-  // 'chat_manual': User chose to chat manually without a timer
-  // 'chat_post_pomodoro': User finished a timer and is now reporting
   const [view, setView] = useState<'hub' | 'pomodoro' | 'chat_manual' | 'chat_post_pomodoro'>('hub');
   const [sessionType, setSessionType] = useState<'FOCUS' | 'BREAK'>('FOCUS');
-  
-  // To store the duration from a completed Pomodoro session
   const [completedDuration, setCompletedDuration] = useState<number>(0);
+  const [isLoggedIn, setIsLoggedIn] = useState(true); // Assume logged in, verify on mount
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    // Check auth status on component mount
+    const checkAuthStatus = async () => {
+      try {
+        await api.get('/dashboard'); // Protected endpoint
+        setIsLoggedIn(true);
+      } catch (error) {
+        setIsLoggedIn(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    checkAuthStatus();
+  }, []);
 
   const showHub = () => setView('hub');
 
-  // This function is called by PomodoroManager when a focus session ends
   const handleSessionComplete = (duration: number) => {
     setCompletedDuration(duration);
     setView('chat_post_pomodoro');
   };
 
-  // This function is called from the post-session chat to start a break
   const handleStartBreak = () => {
     setSessionType('BREAK');
     setView('pomodoro');
   };
 
-  // Hub screen rendering
   const renderHub = () => (
     <>
       <p className="text-lg text-gray-400 mb-8">どのように活動を記録しますか？</p>
@@ -59,6 +68,21 @@ export default function FocusPage() {
     </>
   );
 
+  const renderLoginRequired = () => (
+    <div className="text-center p-8 bg-gray-800 rounded-lg shadow-lg">
+      <h2 className="text-2xl font-bold text-red-400">ログインが必要です</h2>
+      <p className="mt-2 text-gray-400">この機能を利用するには、ログインしてください。</p>
+    </div>
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 w-full">
+         <p className="text-gray-400">読み込み中...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center justify-center p-8 w-full">
       <div className="flex items-center gap-4 mb-6">
@@ -66,7 +90,7 @@ export default function FocusPage() {
         <h1 className="text-4xl font-bold">執務室</h1>
       </div>
 
-      {view === 'hub' ? renderHub() : (
+      {!isLoggedIn ? renderLoginRequired() : view === 'hub' ? renderHub() : (
         <div className="w-full max-w-2xl mt-6">
           <button onClick={showHub} className="mb-6 text-teal-400 hover:text-teal-300 cursor-pointer">
             &larr; 執務室のトップに戻る

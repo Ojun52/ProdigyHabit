@@ -5,10 +5,12 @@ import { BrainCircuit, Sofa } from 'lucide-react';
 import WeeklySummaryChart from '@/components/WeeklySummaryChart'; // Import the new component
 import { useEffect, useState, Suspense } from 'react'; // Import Suspense
 import { useSearchParams } from 'next/navigation';
+import api from '@/lib/api';
 
 const DashboardContent = () => {
   const searchParams = useSearchParams();
   const [loginMessage, setLoginMessage] = useState<string | null>(null); // State for the message
+  const [isLoggedIn, setIsLoggedIn] = useState(true); // Assume logged in initially
 
   useEffect(() => {
     const message = searchParams.get('message');
@@ -17,6 +19,24 @@ const DashboardContent = () => {
       // URLからクエリパラメータを削除して、リロードしてもメッセージが再表示されないようにする
       window.history.replaceState(null, '', window.location.pathname);
     }
+
+    // Check auth status for non-redirected users
+    const checkAuthStatus = async () => {
+      try {
+        await api.get('/dashboard'); // Use the dashboard endpoint to check auth
+        setIsLoggedIn(true);
+      } catch (error) {
+        setIsLoggedIn(false);
+      }
+    };
+    
+    // Only run auth check if there isn't a message from a redirect
+    if (!message) {
+      checkAuthStatus();
+    } else {
+      setIsLoggedIn(false); // If there's a login_required message, user is not logged in
+    }
+
   }, [searchParams]);
 
   return (
@@ -27,6 +47,13 @@ const DashboardContent = () => {
         {loginMessage && (
           <div className="bg-red-900 border border-red-700 text-white px-4 py-3 rounded-lg relative text-center mb-6" role="alert">
             <span className="block sm:inline">{loginMessage}</span>
+          </div>
+        )}
+        
+        {/* Generic login prompt for non-logged-in users */}
+        {!isLoggedIn && !loginMessage && (
+          <div className="bg-blue-900 border border-blue-700 text-white px-4 py-3 rounded-lg relative text-center mb-6" role="alert">
+            <span className="block sm:inline">ようこそ！ログインして、あなたの生産性向上を始めましょう。</span>
           </div>
         )}
 
