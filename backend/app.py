@@ -395,8 +395,8 @@ def get_dashboard_data():
         ActivityLog.user_id == current_user.id,
         ActivityLog.log_type == 'focus',
         ActivityLog.created_at.between(start_datetime, end_datetime),
-        ActivityLog.data.has_key('score'),
-        ActivityLog.data.has_key('duration_minutes')
+        # ActivityLog.data.has_key('score'),
+        # ActivityLog.data.has_key('duration_minutes')
     ).group_by(
         cast(ActivityLog.created_at, Date)
     ).all()
