@@ -13,8 +13,9 @@ from flask import Flask, jsonify, redirect, request, session, url_for
 from flask_cors import CORS
 from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
-from flask_migrate import Migrate  # Import Flask-Migrate
+from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func, cast, Date, Float, Integer, desc
 from models import ActivityLog  # Import db and models from models.py
 from models import AiUsageLog, User, db
 
@@ -37,7 +38,7 @@ else:
 
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS必須（本番は必須）
+# app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS必須（本番は必須）
 app.json.ensure_ascii = False
 app.secret_key = os.getenv("FLASK_APP_SECRET_KEY", "dev-secret-key")
 
@@ -109,7 +110,6 @@ google = oauth.register(
 
 @app.route('/api/login')
 def login():
-    # Prioritize environment variable, otherwise generate URL with HTTPS scheme for proxy compatibility
     redirect_uri = os.getenv('GOOGLE_REDIRECT_URI') or url_for(
         'auth_callback', _external=True, _scheme='https')
     session['next_url'] = request.args.get('next') or os.getenv(
@@ -151,44 +151,283 @@ def logout():
     return jsonify({"success": True, "message": "Logged out successfully"})
 
 
+@app.route('/api/me', methods=['GET'])
+@login_required
+def me():
+    """Returns the currently authenticated user's information."""
+    return jsonify({
+        "id": current_user.id,
+        "name": current_user.name,
+        "email": current_user.email,
+        "google_id": current_user.google_id
+    })
+
+
+@app.route('/api/me/stats', methods=['GET'])
+@login_required
+def get_user_stats():
+    """Calculates and returns the user's current activity streak."""
+    try:
+        logs = db.session.query(db.func.date(ActivityLog.created_at)).filter(
+            ActivityLog.user_id == current_user.id
+        ).distinct().order_by(db.func.date(ActivityLog.created_at).desc()).all()
+
+        if not logs:
+            return jsonify({"streak": 0})
+
+        log_dates = {row[0] for row in logs}
+
+        today = datetime.date.today()
+        streak = 0
+
+        # Check if today has a log
+        if today in log_dates:
+            streak += 1
+            check_date = today - datetime.timedelta(days=1)
+        # If no log today, check from yesterday
+        else:
+            check_date = today - datetime.timedelta(days=1)
+
+        # Count backwards from check_date
+        while check_date in log_dates:
+            streak += 1
+            check_date -= datetime.timedelta(days=1)
+
+        return jsonify({"streak": streak})
+
+    except Exception as e:
+        logging.error(
+            f"Error calculating streak for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred while calculating stats.'}), 500
+
+
+@app.route('/api/lounge/latest', methods=['GET'])
+@login_required
+def get_latest_lounge_log():
+    """Gets the most recent 'life' activity log for the current user."""
+    try:
+        latest_log = ActivityLog.query.filter_by(
+            user_id=current_user.id,
+            log_type='life'
+        ).order_by(ActivityLog.created_at.desc()).first()
+
+        if not latest_log:
+            return jsonify(None)
+
+        return jsonify(latest_log.data)
+
+    except Exception as e:
+        logging.error(
+            f"Error fetching latest lounge log for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
+
+
+@app.route('/api/lounge/quick', methods=['POST'])
+@login_required
+def quick_save_lounge_log():
+    """Quickly saves a 'life' log with numeric data and returns AI encouragement."""
+    data = request.get_json()
+    sleep_hours = data.get('sleep_hours')
+    screen_time = data.get('screen_time')
+    mood = data.get('mood')
+
+    if sleep_hours is None or screen_time is None or mood is None:
+        return jsonify({'error': 'Missing required data (sleep_hours, screen_time, mood)'}), 400
+
+    try:
+        log_data = {
+            "sleep_hours": float(sleep_hours),
+            "screen_time": int(screen_time),
+            "mood": int(mood)
+        }
+
+        # --- Generate AI encouragement ---
+        # 1. Fetch recent work context
+        one_day_ago = datetime.datetime.utcnow() - datetime.timedelta(days=1)
+        recent_focus_logs = ActivityLog.query.filter(
+            ActivityLog.user_id == current_user.id,
+            ActivityLog.log_type == 'focus',
+            ActivityLog.created_at >= one_day_ago
+        ).order_by(ActivityLog.created_at.desc()).limit(3).all()
+
+        focus_context_str = "直近の仕事記録はありません。"
+        if recent_focus_logs:
+            tasks = [log.data.get('task_content', '不明なタスク')
+                     for log in recent_focus_logs]
+            focus_context_str = f"ユーザーは直近で「{', '.join(tasks)}」などの仕事をしていました。"
+
+        # 2. Create prompt
+        prompt = (
+            f"ユーザーは体調を記録しました。睡眠時間: {sleep_hours}時間, スマホ時間: {screen_time}分, 気分: {mood}/5。 "
+            f"{focus_context_str} "
+            f"この状況を踏まえ、ユーザーを労う優しいメッセージを100文字以内で生成してください。"
+        )
+
+        # 3. Call AI
+        text_model = genai.GenerativeModel('gemini-2.5-flash')
+        response = text_model.generate_content(prompt)
+        ai_message = response.text.strip()
+
+        log_data['ai_advice'] = ai_message  # Save advice with the log
+
+        # Save the new log
+        new_log = ActivityLog(
+            user_id=current_user.id,
+            log_type='life',
+            data=log_data
+        )
+        db.session.add(new_log)
+        db.session.commit()
+
+        return jsonify({'success': True, 'ai_message': ai_message})
+
+    except Exception as e:
+        db.session.rollback()
+        logging.error(
+            f"Error in quick_save_lounge_log for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
+
+
+@app.route('/api/focus/quick', methods=['POST'])
+@login_required
+def quick_save_focus_log():
+    """Receives focus data, gets AI score/feedback, and saves the log."""
+    data = request.get_json()
+    task_content = data.get('task_content')
+    duration_minutes = data.get('duration_minutes')
+
+    if not task_content or duration_minutes is None:
+        return jsonify({'error': 'Missing required data (task_content, duration_minutes)'}), 400
+
+    try:
+        # --- AI Scoring and Feedback ---
+        # 1. Fetch recent life context
+        one_day_ago = datetime.datetime.utcnow() - datetime.timedelta(days=1)
+        recent_life_log = ActivityLog.query.filter(
+            ActivityLog.user_id == current_user.id,
+            ActivityLog.log_type == 'life',
+            ActivityLog.created_at >= one_day_ago
+        ).order_by(ActivityLog.created_at.desc()).first()
+
+        life_context_str = "直近の生活記録はありません。"
+        if recent_life_log:
+            life_data = recent_life_log.data
+            life_context_str = (
+                f"ユーザーの直近のコンディションは、"
+                f"睡眠時間: {life_data.get('sleep_hours')}時間, "
+                f"スマホ時間: {life_data.get('screen_time')}分, "
+                f"気分: {life_data.get('mood')}/5でした。"
+            )
+
+        # 2. Create prompt for JSON output
+        scoring_prompt = f"""ユーザーの成果報告を評価し、生産性スコア（0〜100点）を採点し、簡潔なフィードバックを日本語で生成してください。
+- 成果報告: 「{task_content}」
+- 作業時間: {duration_minutes}分
+- 参考情報: {life_context_str}
+出力は必ず以下の有効なJSON形式とします。
+{{\"score\": integer, \"ai_feedback\": \"string\"}}"""
+
+        # 3. Call AI
+        json_model = genai.GenerativeModel(
+            'gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+        scoring_response = json_model.generate_content(scoring_prompt)
+        ai_results = json.loads(scoring_response.text)
+
+        score = ai_results.get('score')
+        ai_feedback = ai_results.get('ai_feedback')
+
+        # --- Save the Log ---
+        log_data = {
+            'task_content': task_content,
+            'duration_minutes': int(duration_minutes),
+            'score': score,
+            'ai_feedback': ai_feedback,
+            'focus_level': None  # Not provided in quick mode
+        }
+
+        new_log = ActivityLog(user_id=current_user.id,
+                              log_type='focus', data=log_data)
+        db.session.add(new_log)
+        db.session.commit()
+
+        return jsonify({'success': True, 'score': score, 'ai_message': ai_feedback})
+
+    except Exception as e:
+        db.session.rollback()
+        logging.error(
+            f"Error in quick_save_focus_log for user {current_user.id}: {e}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
+
+
 @app.route('/api/dashboard', methods=['GET'])
 @login_required
 def get_dashboard_data():
-    """Fetches activity log data for the dashboard, optionally filtered by date range."""
-
+    """
+    Fetches and aggregates activity log data for the dashboard,
+    calculating daily average scores and total durations.
+    """
     start_date_str = request.args.get('start_date')
     end_date_str = request.args.get('end_date')
 
-    # Default to current week if dates are not provided
     today = datetime.date.today()
     if start_date_str:
-        start_date = datetime.datetime.strptime(
-            start_date_str, '%Y-%m-%d').date()
+        start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
     else:
-        # Default to the start of the current week (Monday)
         start_date = today - datetime.timedelta(days=today.weekday())
 
     if end_date_str:
         end_date = datetime.datetime.strptime(end_date_str, '%Y-%m-%d').date()
     else:
-        # Default to the end of the current week (Sunday)
         end_date = start_date + datetime.timedelta(days=6)
 
-    # Ensure time component for query
     start_datetime = datetime.datetime.combine(start_date, datetime.time.min)
     end_datetime = datetime.datetime.combine(end_date, datetime.time.max)
 
-    logs = ActivityLog.query.filter(
+    # 1. Aggregate 'focus' data
+    focus_data_query = db.session.query(
+        cast(ActivityLog.created_at, Date).label('date'),
+        func.avg(cast(ActivityLog.data['score'], Float)).label('avg_score'),
+        func.sum(cast(ActivityLog.data['duration_minutes'], Integer)).label('total_duration')
+    ).filter(
         ActivityLog.user_id == current_user.id,
-        ActivityLog.created_at >= start_datetime,
-        ActivityLog.created_at <= end_datetime
-    ).order_by(ActivityLog.created_at.asc()).all()
+        ActivityLog.log_type == 'focus',
+        ActivityLog.created_at.between(start_datetime, end_datetime),
+        ActivityLog.data.has_key('score'),
+        ActivityLog.data.has_key('duration_minutes')
+    ).group_by(
+        cast(ActivityLog.created_at, Date)
+    ).all()
 
-    # Initialize daily data structure for the week
-    daily_data = {
-        (start_date + datetime.timedelta(days=i)).strftime('%Y-%m-%d'): {
+    # 2. Get latest 'life' data for each day
+    # Subquery to rank logs within each day
+    life_log_subquery = db.session.query(
+        ActivityLog,
+        func.row_number().over(
+            partition_by=(
+                cast(ActivityLog.created_at, Date)
+            ),
+            order_by=ActivityLog.created_at.desc()
+        ).label('rn')
+    ).filter(
+        ActivityLog.user_id == current_user.id,
+        ActivityLog.log_type == 'life',
+        ActivityLog.created_at.between(start_datetime, end_datetime)
+    ).subquery()
+
+    # Main query to select the latest log (rn=1) for each day
+    latest_life_logs_query = db.session.query(
+        life_log_subquery
+    ).filter(
+        life_log_subquery.c.rn == 1
+    ).all()
+
+
+    # 3. Merge data
+    merged_data = {
+        (start_date + datetime.timedelta(days=i)): {
             "date": (start_date + datetime.timedelta(days=i)).strftime('%Y-%m-%d'),
             "score": None,
+            "total_duration": None,
             "sleep_hours": None,
             "screen_time": None,
             "mood": None
@@ -196,19 +435,20 @@ def get_dashboard_data():
         for i in range((end_date - start_date).days + 1)
     }
 
-    for log in logs:
-        date_str = log.created_at.strftime('%Y-%m-%d')
-        if date_str in daily_data:
-            if log.log_type == 'focus':
-                daily_data[date_str]["score"] = log.data.get('score')
-            elif log.log_type == 'life':
-                daily_data[date_str]["sleep_hours"] = log.data.get(
-                    'sleep_hours')
-                daily_data[date_str]["screen_time"] = log.data.get(
-                    'screen_time')
-                daily_data[date_str]["mood"] = log.data.get('mood')
+    for row in focus_data_query:
+        if row.date in merged_data:
+            merged_data[row.date]['score'] = round(row.avg_score, 1) if row.avg_score is not None else None
+            merged_data[row.date]['total_duration'] = row.total_duration
 
-    final_chart_data = list(daily_data.values())
+    for row in latest_life_logs_query:
+        log_date = row.created_at.date()
+        if log_date in merged_data:
+            merged_data[log_date]['sleep_hours'] = row.data.get('sleep_hours')
+            merged_data[log_date]['screen_time'] = row.data.get('screen_time')
+            merged_data[log_date]['mood'] = row.data.get('mood')
+
+
+    final_chart_data = sorted(list(merged_data.values()), key=lambda x: x['date'])
 
     return jsonify({"chart_data": final_chart_data})
 

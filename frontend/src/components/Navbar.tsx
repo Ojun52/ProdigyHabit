@@ -14,36 +14,49 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import AnimatedHamburgerButton from './AnimatedHamburgerButton'; // Import the new component
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
 
 const Navbar = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [streak, setStreak] = useState(0);
 
   useEffect(() => {
-    const checkAuthStatus = async () => {
+    const checkAuthAndStats = async () => {
+      setIsLoading(true);
       try {
-        await api.get('/dashboard'); // Use the dashboard endpoint to check auth
+        await api.get('/me'); 
         setIsLoggedIn(true);
+        // If logged in, fetch stats
+        try {
+          const statsResponse = await api.get('/me/stats');
+          setStreak(statsResponse.data.streak || 0);
+        } catch (statsError) {
+          console.error('統計の取得に失敗しました。', statsError);
+          setStreak(0); // Reset streak on error
+        }
       } catch (error) {
         setIsLoggedIn(false);
+        setStreak(0); // Not logged in, so no streak
       } finally {
         setIsLoading(false);
       }
     };
-    checkAuthStatus();
+    checkAuthAndStats();
   }, []);
   
   const handleLogout = async () => {
     try {
       await api.post('/logout');
       setIsLoggedIn(false);
+      setStreak(0); // Reset streak on logout
       window.location.href = '/'; // Redirect to home to reflect logout state
-          } catch (error) {
-          console.error('ログアウトに失敗しました。', error);
-        }
-      };  
+    } catch (error) {
+      console.error('ログアウトに失敗しました。', error);
+    }
+  };  
+
   const navLinks = [
     { href: '/', text: 'ホーム', icon: HomeIcon },
     { href: '/focus', text: '執務室', icon: BrainCircuit },
@@ -57,9 +70,16 @@ const Navbar = () => {
     <header className="bg-gray-800 shadow-md sticky top-0 z-50">
       <nav className="container mx-auto px-4 sm:px-6 py-3">
         <div className="flex justify-between items-center">
-          <Link href="/" className="text-xl font-bold text-white">
-            ProdigyHabit
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-xl font-bold text-white">
+              ProdigyHabit
+            </Link>
+            {isLoggedIn && streak > 0 && (
+              <span className="text-orange-400 font-bold hidden sm:inline">
+                🔥 {streak}日連続
+              </span>
+            )}
+          </div>
           
           <div className="hidden md:flex items-center space-x-4">
             {navLinks.map(link => (
@@ -85,6 +105,11 @@ const Navbar = () => {
           
           {/* Mobile Menu Button */}
           <div className="md:hidden flex items-center z-50">
+             {isLoggedIn && streak > 0 && (
+              <span className="text-orange-400 font-bold text-sm mr-2">
+                🔥 {streak}日
+              </span>
+            )}
             <AnimatedHamburgerButton 
               isOpen={isMenuOpen}
               onClick={() => setIsMenuOpen(!isMenuOpen)}

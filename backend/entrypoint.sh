@@ -14,4 +14,4 @@ flask init-db
 # Using exec means Gunicorn will replace the shell process and become the
 # main process (PID 1), which is important for signal handling.
 echo "Starting Gunicorn..."
-exec gunicorn --workers 4 --bind 0.0.0.0:$PORT app:app
+exec gunicorn --workers 4 --bind 0.0.0.0:$PORT --reload app:app

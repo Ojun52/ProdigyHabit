@@ -11,6 +11,10 @@ interface Message {
   text: string;
 }
 
+interface LoungeChatProps {
+  initialMessage?: string | null;
+}
+
 // Voice Recognition setup
 declare global {
   interface Window {
@@ -19,13 +23,8 @@ declare global {
   }
 }
 
-export default function LoungeChat() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      sender: 'ai',
-      text: 'こんにちは！あなたの体調管理をサポートします。最近の睡眠時間、スマホ使用時間、今の気分（1〜5段階）など、なんでもお話しください。'
-    }
-  ]);
+export default function LoungeChat({ initialMessage }: LoungeChatProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -33,6 +32,20 @@ export default function LoungeChat() {
 
   const recognition = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Set initial message
+  useEffect(() => {
+    if (initialMessage) {
+      setMessages([{ sender: 'ai', text: initialMessage }]);
+    } else {
+      setMessages([
+        {
+          sender: 'ai',
+          text: 'こんにちは！あなたの体調管理をサポートします。最近の睡眠時間、スマホ使用時間、今の気分（1〜5段階）など、なんでもお話しください。'
+        }
+      ]);
+    }
+  }, [initialMessage]);
 
   // Scroll to bottom effect
   useEffect(() => {

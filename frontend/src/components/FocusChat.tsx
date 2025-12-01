@@ -1,12 +1,19 @@
 import { useState, useRef, useEffect } from 'react';
 import api from '@/lib/api';
-import { Bot, User, Coffee } from 'lucide-react';
+import { Bot, User, Coffee, Star } from 'lucide-react';
 import ChatInput from './ChatInput'; // Import the new ChatInput component
 
 // Define message type
 interface Message {
   sender: 'user' | 'ai';
   text: string;
+}
+
+interface FocusChatProps {
+  initialDuration?: number;
+  onStartBreak?: () => void;
+  initialScore?: number | null;
+  initialMessage?: string | null;
 }
 
 // Voice Recognition setup
@@ -17,23 +24,42 @@ declare global {
   }
 }
 
-export default function FocusChat({ initialDuration, onStartBreak }: { initialDuration?: number; onStartBreak?: () => void; }) {
-  const [messages, setMessages] = useState<Message[]>([
-    { 
-      sender: 'ai', 
-      text: initialDuration 
-        ? `${initialDuration}分間の集中、お疲れ様でした！どのような成果がありましたか？`
-        : 'お疲れ様です！今日の集中作業について教えてください。（例:「〇〇の資料を30分作成した」）' 
-    }
-  ]);
+export default function FocusChat({ initialDuration, onStartBreak, initialScore, initialMessage }: FocusChatProps) {
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [isSessionSaved, setIsSessionSaved] = useState(false); // To track if save was successful
+  const [isSessionSaved, setIsSessionSaved] = useState(false);
   const [cooldownMessage, setCooldownMessage] = useState<string | null>(null);
   
   const recognition = useRef<any>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  
+  // Set initial state based on props
+  useEffect(() => {
+    if (initialScore !== null && initialMessage) {
+      // From quick input form
+      const formattedMessage = `AI採点結果:
+      \n- 生産性スコア: ${initialScore}点
+      \n- フィードバック: ${initialMessage}
+      \n\n（成果を記録しました。）`;
+      setMessages([{ sender: 'ai', text: formattedMessage }]);
+      setIsSessionSaved(true); // Already saved via quick form
+    } else if (initialDuration) {
+       // From pomodoro timer
+      setMessages([{ 
+        sender: 'ai', 
+        text: `${initialDuration}分間の集中、お疲れ様でした！どのような成果がありましたか？`
+      }]);
+    } else {
+      // Default manual chat entry
+      setMessages([{ 
+        sender: 'ai', 
+        text: 'お疲れ様です！今日の集中作業について教えてください。（例:「〇〇の資料を30分作成した」）' 
+      }]);
+    }
+  }, [initialDuration, initialScore, initialMessage]);
+
 
   // Scroll to bottom effect
   useEffect(() => {
