@@ -372,8 +372,7 @@ def get_dashboard_data():
 
     today = datetime.date.today()
     if start_date_str:
-        start_date = datetime.datetime.strptime(
-            start_date_str, '%Y-%m-%d').date()
+        start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
     else:
         start_date = today - datetime.timedelta(days=today.weekday())
 
@@ -385,29 +384,28 @@ def get_dashboard_data():
     start_datetime = datetime.datetime.combine(start_date, datetime.time.min)
     end_datetime = datetime.datetime.combine(end_date, datetime.time.max)
 
-    # 1. Aggregate 'focus' data with corrected casting (.astext)
+    # 1. Aggregate 'focus' data using op('->>') for robust JSON casting
     focus_data_query = db.session.query(
         cast(ActivityLog.created_at, Date).label('date'),
-        func.avg(cast(ActivityLog.data['score'].astext, Float)).label('avg_score'),
-        func.sum(cast(ActivityLog.data['duration_minutes'].astext, Integer)).label('total_duration')
+        func.avg(cast(ActivityLog.data.op('->>')('score'), Float)).label('avg_score'),
+        func.sum(cast(ActivityLog.data.op('->>')('duration_minutes'), Integer)).label('total_duration')
     ).filter(
         ActivityLog.user_id == current_user.id,
         ActivityLog.log_type == 'focus',
-        ActivityLog.created_at.between(start_datetime, end_datetime),
-        ActivityLog.data.has_key('score'),
-        ActivityLog.data.has_key('duration_minutes')
+        ActivityLog.created_at.between(start_datetime, end_datetime)
     ).group_by(
         cast(ActivityLog.created_at, Date)
     ).all()
 
-    # 2. Get latest 'life' data for each day
-    # Subquery to rank logs within each day
+    # 2. Get latest 'life' data for each day using op('->>')
+    # Subquery to rank logs and extract values directly
     life_log_subquery = db.session.query(
-        ActivityLog,
+        ActivityLog.created_at,
+        cast(ActivityLog.data.op('->>')('sleep_hours'), Float).label('sleep_hours'),
+        cast(ActivityLog.data.op('->>')('screen_time'), Integer).label('screen_time'),
+        cast(ActivityLog.data.op('->>')('mood'), Integer).label('mood'),
         func.row_number().over(
-            partition_by=(
-                cast(ActivityLog.created_at, Date)
-            ),
+            partition_by=(cast(ActivityLog.created_at, Date)),
             order_by=ActivityLog.created_at.desc()
         ).label('rn')
     ).filter(
@@ -418,7 +416,10 @@ def get_dashboard_data():
 
     # Main query to select the latest log (rn=1) for each day
     latest_life_logs_query = db.session.query(
-        life_log_subquery
+        life_log_subquery.c.created_at,
+        life_log_subquery.c.sleep_hours,
+        life_log_subquery.c.screen_time,
+        life_log_subquery.c.mood
     ).filter(
         life_log_subquery.c.rn == 1
     ).all()
@@ -438,19 +439,17 @@ def get_dashboard_data():
 
     for row in focus_data_query:
         if row.date in merged_data:
-            merged_data[row.date]['score'] = round(
-                row.avg_score, 1) if row.avg_score is not None else None
+            merged_data[row.date]['score'] = round(row.avg_score, 1) if row.avg_score is not None else None
             merged_data[row.date]['total_duration'] = row.total_duration
 
     for row in latest_life_logs_query:
         log_date = row.created_at.date()
         if log_date in merged_data:
-            merged_data[log_date]['sleep_hours'] = row.data.get('sleep_hours')
-            merged_data[log_date]['screen_time'] = row.data.get('screen_time')
-            merged_data[log_date]['mood'] = row.data.get('mood')
+            merged_data[log_date]['sleep_hours'] = row.sleep_hours
+            merged_data[log_date]['screen_time'] = row.screen_time
+            merged_data[log_date]['mood'] = row.mood
 
-    final_chart_data = sorted(
-        list(merged_data.values()), key=lambda x: x['date'])
+    final_chart_data = sorted(list(merged_data.values()), key=lambda x: x['date'])
 
     return jsonify({"chart_data": final_chart_data})
 
