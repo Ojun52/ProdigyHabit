@@ -7,7 +7,7 @@ import { Sofa, Clock, RefreshCcw } from 'lucide-react';
 import { MoonIcon, DevicePhoneMobileIcon, FaceSmileIcon } from '@heroicons/react/24/outline';
 
 // Sub-component for the quick input form
-const LoungeQuickInput = ({ onSubmitted }: { onSubmitted: (aiMessage: string) => void }) => {
+const LoungeQuickInput = ({ onSubmitted }: { onSubmitted: (aiMessage: string | null) => void }) => {
   const [sleepHours, setSleepHours] = useState(7.5);
   const [screenTime, setScreenTime] = useState(180);
   const [mood, setMood] = useState(3);
