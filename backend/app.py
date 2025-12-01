@@ -15,9 +15,9 @@ from flask_login import (LoginManager, UserMixin, current_user, login_required,
                          login_user, logout_user)
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func, cast, Date, Float, Integer, desc
 from models import ActivityLog  # Import db and models from models.py
 from models import AiUsageLog, User, db
+from sqlalchemy import Date, Float, Integer, cast, desc, func
 
 # --- Load Environment Variables ---
 load_dotenv()
@@ -38,7 +38,7 @@ else:
 
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-# app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS必須（本番は必須）
+app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS必須（本番は必須）
 app.json.ensure_ascii = False
 app.secret_key = os.getenv("FLASK_APP_SECRET_KEY", "dev-secret-key")
 
@@ -371,7 +371,8 @@ def get_dashboard_data():
 
     today = datetime.date.today()
     if start_date_str:
-        start_date = datetime.datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        start_date = datetime.datetime.strptime(
+            start_date_str, '%Y-%m-%d').date()
     else:
         start_date = today - datetime.timedelta(days=today.weekday())
 
@@ -387,7 +388,8 @@ def get_dashboard_data():
     focus_data_query = db.session.query(
         cast(ActivityLog.created_at, Date).label('date'),
         func.avg(cast(ActivityLog.data['score'], Float)).label('avg_score'),
-        func.sum(cast(ActivityLog.data['duration_minutes'], Integer)).label('total_duration')
+        func.sum(cast(ActivityLog.data['duration_minutes'], Integer)).label(
+            'total_duration')
     ).filter(
         ActivityLog.user_id == current_user.id,
         ActivityLog.log_type == 'focus',
@@ -421,7 +423,6 @@ def get_dashboard_data():
         life_log_subquery.c.rn == 1
     ).all()
 
-
     # 3. Merge data
     merged_data = {
         (start_date + datetime.timedelta(days=i)): {
@@ -437,7 +438,8 @@ def get_dashboard_data():
 
     for row in focus_data_query:
         if row.date in merged_data:
-            merged_data[row.date]['score'] = round(row.avg_score, 1) if row.avg_score is not None else None
+            merged_data[row.date]['score'] = round(
+                row.avg_score, 1) if row.avg_score is not None else None
             merged_data[row.date]['total_duration'] = row.total_duration
 
     for row in latest_life_logs_query:
@@ -447,8 +449,8 @@ def get_dashboard_data():
             merged_data[log_date]['screen_time'] = row.data.get('screen_time')
             merged_data[log_date]['mood'] = row.data.get('mood')
 
-
-    final_chart_data = sorted(list(merged_data.values()), key=lambda x: x['date'])
+    final_chart_data = sorted(
+        list(merged_data.values()), key=lambda x: x['date'])
 
     return jsonify({"chart_data": final_chart_data})
 
