@@ -385,18 +385,17 @@ def get_dashboard_data():
     start_datetime = datetime.datetime.combine(start_date, datetime.time.min)
     end_datetime = datetime.datetime.combine(end_date, datetime.time.max)
 
-    # 1. Aggregate 'focus' data
+    # 1. Aggregate 'focus' data with corrected casting (.astext)
     focus_data_query = db.session.query(
         cast(ActivityLog.created_at, Date).label('date'),
-        func.avg(cast(ActivityLog.data['score'], Float)).label('avg_score'),
-        func.sum(cast(ActivityLog.data['duration_minutes'], Integer)).label(
-            'total_duration')
+        func.avg(cast(ActivityLog.data['score'].astext, Float)).label('avg_score'),
+        func.sum(cast(ActivityLog.data['duration_minutes'].astext, Integer)).label('total_duration')
     ).filter(
         ActivityLog.user_id == current_user.id,
         ActivityLog.log_type == 'focus',
         ActivityLog.created_at.between(start_datetime, end_datetime),
-        # ActivityLog.data.has_key('score'),
-        # ActivityLog.data.has_key('duration_minutes')
+        ActivityLog.data.has_key('score'),
+        ActivityLog.data.has_key('duration_minutes')
     ).group_by(
         cast(ActivityLog.created_at, Date)
     ).all()
