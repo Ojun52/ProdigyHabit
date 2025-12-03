@@ -38,14 +38,17 @@ else:
 
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SESSION_COOKIE_SECURE"] = True      # HTTPS必須（本番は必須）
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config['SESSION_COOKIE_SECURE'] = True      # HTTPS必須（本番は必須）
+app.config["SESSION_COOKIE_SAMESITE"] = "None"  # CSRF対策
+if os.getenv("LOCAL") == "TRUE":
+    app.config['SESSION_COOKIE_SECURE'] = False  # ローカル開発用に無効化
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # ローカル開発用に緩和
 app.json.ensure_ascii = False
 app.secret_key = os.getenv("FLASK_APP_SECRET_KEY", "dev-secret-key")
 
 # --- CORS Configuration ---
 CORS_ORIGIN = os.getenv("CORS_ORIGIN", "http://localhost:3000")
-CORS(app, origins=CORS_ORIGIN, supports_credentials=True)
+CORS(app, origins=[CORS_ORIGIN], supports_credentials=True)
 
 # --- URL Validation Helper ---
 
